@@ -6,7 +6,7 @@
  * dataset I/O are added in M2.5/M2.6/M3 respectively.
  *
  * CFITSIO HDU numbering note: CFITSIO is 1-based (Primary HDU == 1) but the
- * sciio model and plan §7.1 are 0-based ("HDU0" == Primary). This file stores
+ * sciio model and are 0-based ("HDU0" == Primary). This file stores
  * the index 0-based and translates at the CFITSIO boundary.
  */
 
@@ -58,7 +58,7 @@ typedef struct {
 typedef struct {
     int   index;        /* 0-based; CFITSIO HDU number = index + 1 */
     int   hdu_type;     /* CFITSIO: IMAGE_HDU, ASCII_TBL, BINARY_TBL */
-    int   compressed;   /* nonzero if tile-compressed image (plan §7.6) */
+    int   compressed;   /* nonzero if tile-compressed image */
     char  group_name[16];/* "HDU0", "HDU1", ...; max 6 digits is plenty */
     char *extname;      /* malloc'd; NULL if absent */
     /* Lazy-parsed attribute cache; populated on first attribute access. */
@@ -80,7 +80,7 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /* EXTNAME alias: when an HDU has a unique, valid EXTNAME we surface it as a
- * soft link "/<EXTNAME>" pointing to "/HDU<n>" (plan §7.1). */
+ * soft link "/<EXTNAME>" pointing to "/HDU<n>". */
 typedef struct {
     char *name;          /* owned, e.g. "SCI" */
     char *target;        /* owned, e.g. "/HDU1" */
@@ -105,7 +105,7 @@ typedef enum {
     AO_COLUMNS_GROUP,   /* /HDUn/columns synthetic subgroup (table HDUs) */
     AO_IMAGE_DATA,      /* /HDUn/data on an image HDU */
     AO_COLUMN_DATA,     /* /HDUn/columns/<TTYPE> on a table HDU */
-    AO_TABLE_DATA       /* /HDUn/table compound row view (plan §7.3) */
+    AO_TABLE_DATA       /* /HDUn/table compound row view */
 } ao_sub_t;
 
 struct adapter_object_s {
@@ -245,7 +245,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
         if (fits_read_key_log(fp, "GROUPS", &groups, NULL, &s2) == 0 && groups) {
             fprintf(stderr,
                 "sciio-vol: HDU %d is a Random Groups HDU, which is not "
-                "supported in v1. See plan §7.6.\n", i);
+                "supported in v1. \n", i);
             goto fail;
         }
 
@@ -317,7 +317,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
                         }
                         col->scalar_type.is_vlen = 1;
                     }
-                    /* Multi-element cells: TFORM repeat>1 (plan §7.3). For
+                    /* Multi-element cells: TFORM repeat>1. For
                      * STRING columns (rA), repeat is the string length and
                      * the cell is still scalar. For numeric/bool columns,
                      * we expose each cell as an HDF5 array element shaped by
@@ -706,7 +706,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
         fits_attr_t *a = &attrs[produced];
         a->name = strdup(keyname);
         if (!a->name) continue;
-        /* HIERARCH: convert internal spaces to dots per plan §7.5. */
+        /* HIERARCH: convert internal spaces to dots */
         if (strchr(a->name, ' ')) {
             for (char *p = a->name; *p; ++p) if (*p == ' ') *p = '.';
         }
@@ -715,7 +715,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
          * non-COMMENT/HISTORY keyword across many cards. HDF5 attribute
          * names must be unique per parent, so we keep the first occurrence
          * and log subsequent ones. The full ordered card sequence is still
-         * available via the __raw_header__ byte-exact array (plan §7.5). */
+         * available via the __raw_header__ byte-exact array. */
         int dup = 0;
         for (int j = 0; j < produced; ++j) {
             if (strcmp(attrs[j].name, a->name) == 0) { dup = 1; break; }

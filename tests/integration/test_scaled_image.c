@@ -1,6 +1,6 @@
 /* M3.8 verification: BITPIX=16 image with non-trivial BSCALE/BZERO surfaces
  * as a float64 dataset, with CFITSIO applying physical = BSCALE*raw + BZERO
- * on read (plan §7.2). */
+ * on read. */
 
 #include <assert.h>
 #include <math.h>

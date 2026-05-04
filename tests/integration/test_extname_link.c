@@ -1,5 +1,5 @@
 /* M2.11 verification: EXTNAME → soft link /<EXTNAME> pointing to /HDUn
- * (plan §7.1). Tested against multi_hdu.fits (EXTNAME='SCI' on HDU1). */
+ *. Tested against multi_hdu.fits (EXTNAME='SCI' on HDU1). */
 
 #include <assert.h>
 #include <stdio.h>

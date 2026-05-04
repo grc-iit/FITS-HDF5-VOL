@@ -75,7 +75,7 @@ typedef struct {
 } walk_ctx_t;
 
 /* Open a dataset link, query space+type, attempt whole-dataset read into a
- * temp buffer. Tile-compressed images (plan §7.6) intentionally fail here. */
+ * temp buffer. Tile-compressed images intentionally fail here. */
 static void try_dataset_read(walk_ctx_t *c, const char *path)
 {
     hid_t did = H5Dopen2(c->fid, path, H5P_DEFAULT);

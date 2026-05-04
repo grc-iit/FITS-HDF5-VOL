@@ -1,5 +1,5 @@
 /* M2.9 verification: a FITS file that declares GROUPS = T is rejected by
- * H5Fopen with a non-zero failure (plan §7.6). */
+ * H5Fopen with a non-zero failure. */
 
 #define _DEFAULT_SOURCE   /* mkstemps */
 

@@ -2,7 +2,7 @@
  *
  * Emits a fixed set of test FITS files into the directory passed on the
  * command line. Run by CMake at build time. Each fixture targets a distinct
- * edge case from plan §10.2:
+ * edge case from:
  *
  *   primary_only.fits     — Primary HDU with NAXIS=0 (header-only)
  *   image_2d.fits         — Single 4×3 BITPIX=16 image, no extensions

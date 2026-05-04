@@ -1,5 +1,5 @@
 /* M2.10 verification: __raw_header__ exposes byte-exact 80-char FITS cards
- * as a 1-D vlen-string array attribute (plan §7.5). */
+ * as a 1-D vlen-string array attribute. */
 
 #include <assert.h>
 #include <stdio.h>

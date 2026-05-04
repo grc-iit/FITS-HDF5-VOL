@@ -54,7 +54,7 @@ What an unmodified HDF5 app can do today against any FITS file:
   Variable-length columns map to `H5T_VLEN`; `TDIMn` multi-D cells map to
   `H5T_ARRAY`.
 - Tile-compressed image HDUs surface for introspection; `H5Dread` on them
-  fails with a clear v2-deferred error per plan §7.6.
+  fails with a clear v2-deferred error.
 
 What's deferred:
 - Writing FITS — out of scope for v1. Sciio-vol is read-only by design.

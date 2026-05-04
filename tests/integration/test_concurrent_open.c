@@ -1,6 +1,6 @@
 /* M2.17 verification: two FITS files open simultaneously through the
  * connector report distinct contents. Asserts the adapter holds no global
- * state (plan §6.1). */
+ * state. */
 
 #include <assert.h>
 #include <stdio.h>

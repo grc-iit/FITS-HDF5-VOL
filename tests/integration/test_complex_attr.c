@@ -1,5 +1,5 @@
 /* M2.19 verification: complex (pair) FITS keyword surfaces as an HDF5
- * compound {double re; double im;} attribute (plan §7.5). */
+ * compound {double re; double im;} attribute. */
 
 #include <assert.h>
 #include <stdio.h>

@@ -1,6 +1,6 @@
 /* M4.7 verification: table columns with repeat>1 surface as 1-D datasets
  * whose elements are HDF5 array datatypes shaped from TFORM repeat or TDIMn
- * (plan §7.3). */
+ *. */
 
 #include <assert.h>
 #include <stdio.h>

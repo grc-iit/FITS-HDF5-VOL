@@ -1,6 +1,6 @@
 /* M6.3 performance smoke: warm-cache H5Dread of an image HDU through
  * sciio-vol vs the same pixels read directly via CFITSIO. Asserts the
- * sciio-vol overhead stays within plan §8.3's 10% budget. */
+ * sciio-vol overhead stays within's 10% budget. */
 
 #include <assert.h>
 #include <stdio.h>

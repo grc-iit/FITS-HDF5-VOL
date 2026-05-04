@@ -1,4 +1,4 @@
-/* M2.16 verification: EXTNAME validation per plan §7.1.
+/* M2.16 verification: EXTNAME validation
  *
  * Build a fixture in-process with four extensions whose EXTNAME values
  * trigger each rejection rule:

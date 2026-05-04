@@ -1,5 +1,5 @@
 /* M3.11 verification: a tile-compressed image (ZIMAGE) surfaces normally
- * for introspection but H5Dread is rejected with H5E_UNSUPPORTED, per plan §7.6.
+ * for introspection but H5Dread is rejected with H5E_UNSUPPORTED
  *
  * Uses comp.fits from the astropy corpus, which has a single tile-compressed
  * image extension. */

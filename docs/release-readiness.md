@@ -22,7 +22,7 @@ status today and what (if anything) needs to happen before tagging v1.0.0.
 | Differential / oracle tests vs CFITSIO | ✅ — `test_diff_image_2d`, `test_column_diff` |
 | Integration tests (h5dump, h5ls -r golden, PyTables) | ✅ for h5ls (4 goldens); ❌ PyTables (not exercised) |
 | Fuzz tests | ✅ smoke harness; full AFL++/libFuzzer 24-hour run is a CI item |
-| Performance regression | ✅ within plan §8.3 budget on real-archive sizes |
+| Performance regression | ✅ within the 10% overhead budget on real-archive sizes |
 | Test corpus: NASA HEASARC | ⚠️ partial — `ftt4b` covers it; large mission samples pending |
 | Test corpus: astropy test set | ✅ 5 files, sha256-pinned |
 | Test corpus: hand-crafted edge files | ✅ 10 fixtures |
@@ -73,8 +73,8 @@ status today and what (if anything) needs to happen before tagging v1.0.0.
 | Vlen-string columns (`TFORM 'PA'`) | Rare in practice; logged-skip today |
 | Hyperslab `block > 1` | Explicit "not supported" error; rare in real workloads |
 | In-flight HDF5 type conversion in `H5Dread` | Caller currently must request the dataset's native type |
-| Tile-compressed image data reads | Plan §8.2 explicitly v2 |
-| Conda-forge / spack distribution | Plan §13 Q6 — v1.1 |
+| Tile-compressed image data reads | Explicitly v2 |
+| Conda-forge / spack distribution | Targeted for v1.1 |
 
 ## v2.0 candidates
 
@@ -82,15 +82,15 @@ status today and what (if anything) needs to happen before tagging v1.0.0.
 |---|---|
 | DICOM adapter | Paper-reviewed in M5; API supports it |
 | GRIB adapter | Paper-reviewed in M5; API supports it |
-| NetCDF-3 adapter | Plan §13 Q4 |
-| Tile-compressed image data reads | Plan §8.2 |
+| NetCDF-3 adapter | Future adapter target |
+| Tile-compressed image data reads | Deferred from v1 |
 | Storage-faithful round-trip (preserve original BITPIX through scaling) | Round-trip tools currently lose BITPIX when BSCALE/BZERO promote to float64 |
-| Object-store backends (S3, Swift) | Plan §8.2 |
+| Object-store backends (S3, Swift) | Deferred from v1 |
 
 ## What "v1.0.0-rc" means today
 
-The codebase delivers everything plan §11 promised for v1, with verified
-behavior against:
+The codebase delivers everything scoped for v1, with verified behavior
+against:
 - 10 hand-crafted deterministic fixtures
 - 5 astropy public test files (downloaded + sha256-pinned)
 - 16 NRAO `ftt4b` reference files

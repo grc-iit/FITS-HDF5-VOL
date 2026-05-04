@@ -456,8 +456,8 @@ foreach(i RANGE ${_last})
 endforeach()
 
 # Round-trip tests: FITS → HDF5 → restored FITS, byte-compared.
-# Excludes files that promote to float64 via BSCALE/BZERO (plan §7.2 contract:
-# the FITS encoding can't be losslessly recovered from physical-value floats).
+# Excludes files that promote to float64 via BSCALE/BZERO: the FITS encoding
+# can't be losslessly recovered from physical-value floats.
 set(_RT_RUNNER ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/run_roundtrip.sh)
 set(_RT_HDF5_LIB ${HDF5_DIR}/../lib)
 set(_RT_ENV
@@ -477,7 +477,7 @@ set_tests_properties(roundtrip_image_2d PROPERTIES ENVIRONMENT "${_RT_ENV}")
 
 # ftt4b: only files known to round-trip bit-exact (no BSCALE/BZERO promotion,
 # no tables, no compression). Files that promote to float64 are correctly
-# preserved-by-physical-value but the BITPIX changes — that is plan §7.2,
+# preserved-by-physical-value but the BITPIX changes — that is,
 # not a regression to test against.
 if(EXISTS ${SCIIO_FTT4B_DIR})
     foreach(_stem file007 file010 file011 file015 file016)

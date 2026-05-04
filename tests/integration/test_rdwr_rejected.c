@@ -1,5 +1,5 @@
 /* M2.13 verification: H5F_ACC_RDWR is rejected with a clear failure
- * (plan §3 read-only contract). Read access on the same file still works. */
+ * (read-only contract). Read access on the same file still works. */
 
 #include <assert.h>
 #include <stdio.h>

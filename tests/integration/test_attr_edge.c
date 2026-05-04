@@ -66,7 +66,7 @@ int main(void)
     free(longstr);
 
     /* COMMENT — assert our 3 records are present and in fixture order.
-     * (CFITSIO injects boilerplate COMMENTs of its own; per plan §7.6 we
+     * (CFITSIO injects boilerplate COMMENTs of its own; we
      * surface every keyword in file order, so we check substring presence
      * and relative ordering, not exact line count.) */
     char *cmt = read_string_attr(hdu0, "COMMENT");
