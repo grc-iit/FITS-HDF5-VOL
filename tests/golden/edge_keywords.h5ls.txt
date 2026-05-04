@@ -1,0 +1,3 @@
+/                        Group
+/HDU0                    Group
+/HDU0/data               Dataset {2, 2}

@@ -1,0 +1,13 @@
+/                        Group
+/HDU0                    Group
+/HDU0/data               Dataset {2, 3}
+/HDU1                    Group
+/HDU1/data               Dataset {2, 3}
+/HDU2                    Group
+/HDU2/data               Dataset {2, 3}
+/HDU3                    Group
+/HDU3/data               Dataset {2, 3}
+/HDU4                    Group
+/HDU4/data               Dataset {2, 3}
+/HDU5                    Group
+/HDU5/data               Dataset {2, 3}

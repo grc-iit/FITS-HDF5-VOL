@@ -1,0 +1,8 @@
+/                        Group
+/HDU0                    Group
+/HDU0/data               Dataset {2, 2}
+/HDU1                    Group
+/HDU1/data               Dataset {2, 2}
+/HDU2                    Group
+/HDU2/data               Dataset {2, 2}
+/SCI                     Soft Link {/HDU1}

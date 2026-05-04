@@ -1,0 +1,65 @@
+# Build output
+build/
+build-*/
+cmake-build-*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+*.cmake
+!cmake/*.cmake
+
+# Compiled objects / libraries
+*.o
+*.obj
+*.a
+*.la
+*.lo
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Compiled tool binaries (built from tools/*.c)
+tools/fits_compare
+tools/fits_to_h5
+tools/h5_to_fits
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+*.tmp
+
+# Images
+*.png
+demo/
+
+# Internal planning / scratch (never push)
+*plan*.md
+*PLAN*.md
+*plan*.MD
+TODO.md
+NOTES.md
+SCRATCH.md
+DRAFT.md
+.notes/
+.scratch/

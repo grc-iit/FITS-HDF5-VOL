@@ -1,0 +1,8 @@
+/                        Group
+/HDU0                    Group
+/HDU1                    Group
+/HDU1/columns            Group
+/HDU1/columns/vec3       Dataset {5}
+/HDU1/columns/mat22      Dataset {5}
+/HDU1/table              Dataset {5}
+/M47                     Soft Link {/HDU1}

@@ -1,0 +1,7 @@
+/                        Group
+/HDU0                    Group
+/HDU1                    Group
+/HDU1/columns            Group
+/HDU1/columns/vlen_int   Dataset {4}
+/HDU1/table              Dataset {4}
+/M48                     Soft Link {/HDU1}
