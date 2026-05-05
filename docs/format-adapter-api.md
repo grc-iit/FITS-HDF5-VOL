@@ -1,8 +1,8 @@
-# sciio-vol Format-Adapter API
+# fits-hdf5-vol Format-Adapter API
 
-Public surface: `include/sciio/adapter.h`. This is the abstract contract a
+Public surface: `include/fits_hdf5/adapter.h`. This is the abstract contract a
 format adapter implements. The connector calls every adapter through a
-**vtable** (`sciio_adapter_t`). v1 ships a single FITS adapter; the API
+**vtable** (`fits_adapter_t`). v1 ships a single FITS adapter; the API
 shape is co-designed against DICOM and GRIB so that adding either later
 won't require a connector change.
 
@@ -19,7 +19,7 @@ HDF5 application
 HDF5 library
        │  (VOL callbacks)
        ▼
-sciio-vol connector  (src/sciio_vol_connector.c)
+fits-hdf5-vol connector  (src/fits_hdf5_vol_connector.c)
        │
        │  Dispatch:
        │    1. On H5Fopen, walk the registry, call each adapter's probe(),
@@ -28,7 +28,7 @@ sciio-vol connector  (src/sciio_vol_connector.c)
        │       state. Every subsequent call dispatches through it.
        │
        ▼
-adapter vtable        (sciio_adapter_t — defined in adapter.h)
+adapter vtable        (fits_adapter_t — defined in adapter.h)
        │
        ▼
 Adapter implementation: probe / open / close / root / object_open /
@@ -44,15 +44,15 @@ Underlying format library  (CFITSIO for FITS; DCMTK for DICOM; eccodes for GRIB)
 ## 2. Versioning
 
 ```c
-#define SCIIO_ADAPTER_API_VERSION_MAJOR 1
-#define SCIIO_ADAPTER_API_VERSION_MINOR 0
+#define FITS_ADAPTER_API_VERSION_MAJOR 1
+#define FITS_ADAPTER_API_VERSION_MINOR 0
 ```
 
-- **Major version** bumps on layout-breaking changes to `sciio_adapter_t`
+- **Major version** bumps on layout-breaking changes to `fits_adapter_t`
   (insertion in the middle, deletion, signature change). Adapters built
   against an older major are refused at registration time.
 - **Minor version** bumps when new function pointers are appended to the
-  end of `sciio_adapter_t`. Existing adapters keep working; the connector
+  end of `fits_adapter_t`. Existing adapters keep working; the connector
   checks for NULL before calling new slots.
 - All other typedefs (`adapter_type_t`, `adapter_space_t`, etc.) are
   governed by the same version.
@@ -60,18 +60,18 @@ Underlying format library  (CFITSIO for FITS; DCMTK for DICOM; eccodes for GRIB)
 Adapters initialize:
 
 ```c
-const sciio_adapter_t my_adapter = {
+const fits_adapter_t my_adapter = {
     .name              = "my-format",
-    .api_version_major = SCIIO_ADAPTER_API_VERSION_MAJOR,
-    .api_version_minor = SCIIO_ADAPTER_API_VERSION_MINOR,
+    .api_version_major = FITS_ADAPTER_API_VERSION_MAJOR,
+    .api_version_minor = FITS_ADAPTER_API_VERSION_MINOR,
     /* function pointers ... */
 };
 ```
 
 ## 3. The vtable
 
-Every adapter exports exactly one `const sciio_adapter_t` and is added to
-`include/sciio/registry.h` (v1 has compile-time registration; v2 may add
+Every adapter exports exactly one `const fits_adapter_t` and is added to
+`include/fits_hdf5/registry.h` (v1 has compile-time registration; v2 may add
 runtime registration without breaking existing adapters).
 
 ### Lifecycle
@@ -222,7 +222,7 @@ is called lazily.
 A minimal adapter skeleton:
 
 ```c
-#include "sciio/adapter.h"
+#include "fits_hdf5/adapter.h"
 
 struct adapter_file_s   { /* your concrete file state */ };
 struct adapter_object_s { /* your concrete object state */ };
@@ -232,10 +232,10 @@ static adapter_file_t *myfmt_open(const char *path, unsigned flags)             
 static void         myfmt_close(adapter_file_t *f)                                { /* … */ }
 /* … all other slots … */
 
-const sciio_adapter_t sciio_myfmt_adapter = {
+const fits_adapter_t fits_myfmt_adapter = {
     .name              = "myfmt",
-    .api_version_major = SCIIO_ADAPTER_API_VERSION_MAJOR,
-    .api_version_minor = SCIIO_ADAPTER_API_VERSION_MINOR,
+    .api_version_major = FITS_ADAPTER_API_VERSION_MAJOR,
+    .api_version_minor = FITS_ADAPTER_API_VERSION_MINOR,
     .probe             = myfmt_probe,
     .open              = myfmt_open,
     .close             = myfmt_close,
@@ -243,18 +243,18 @@ const sciio_adapter_t sciio_myfmt_adapter = {
 };
 ```
 
-Then in `include/sciio/registry.h` add:
+Then in `include/fits_hdf5/registry.h` add:
 
 ```c
-extern const sciio_adapter_t sciio_myfmt_adapter;
+extern const fits_adapter_t fits_myfmt_adapter;
 ```
 
 And in `src/registry.c`:
 
 ```c
-static const sciio_adapter_t *sciio_registry[] = {
-    &sciio_fits_adapter,
-    &sciio_myfmt_adapter,    /* ← */
+static const fits_adapter_t *fits_registry[] = {
+    &fits_adapter,
+    &fits_myfmt_adapter,    /* ← */
     NULL
 };
 ```

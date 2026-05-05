@@ -1,5 +1,5 @@
 /* M4.5 differential: every column from a real table HDU read two ways —
- * via sciio-vol + H5Dread, and directly via CFITSIO — must agree byte-for-byte
+ * via fits-hdf5-vol + H5Dread, and directly via CFITSIO — must agree byte-for-byte
  * after we account for the type CFITSIO returns. Run on tb.fits (binary,
  * 4 cols including a 3A skipped) and file001.fits (ASCII, 7 double cols). */
 
@@ -11,16 +11,16 @@
 #include <fitsio.h>
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
-#ifndef SCIIO_FIXTURES_DIR
-#error "SCIIO_FIXTURES_DIR must be defined"
+#ifndef FITS_FIXTURES_DIR
+#error "FITS_FIXTURES_DIR must be defined"
 #endif
-#ifndef SCIIO_CORPUS_DIR
-#error "SCIIO_CORPUS_DIR must be defined"
+#ifndef FITS_CORPUS_DIR
+#error "FITS_CORPUS_DIR must be defined"
 #endif
 
-/* file001.fits: 7 cols all TDOUBLE in ASCII, 10 rows. Compare sciio-vol vs
+/* file001.fits: 7 cols all TDOUBLE in ASCII, 10 rows. Compare fits-hdf5-vol vs
  * direct CFITSIO TDOUBLE read. */
 static void diff_file001(hid_t vol)
 {
@@ -73,7 +73,7 @@ static void diff_file001(hid_t vol)
 static void diff_tb(hid_t vol)
 {
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
-    const char *path = SCIIO_CORPUS_DIR "/tb.fits";
+    const char *path = FITS_CORPUS_DIR "/tb.fits";
     hid_t fid = H5Fopen(path, H5F_ACC_RDONLY, fapl);
     assert(fid >= 0);
 
@@ -123,7 +123,7 @@ static void diff_tb(hid_t vol)
 
 int main(void)
 {
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     assert(vol >= 0);
     diff_file001(vol);
     diff_tb(vol);

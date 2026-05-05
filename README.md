@@ -1,15 +1,15 @@
-# FITS-HDF5-VOL (sciio-vol)
+# FITS-HDF5-VOL
 
 A terminal HDF5 Virtual Object Layer (VOL) connector that lets unmodified
 HDF5 applications read **FITS** files through the standard HDF5 API.
-The library / connector is named `sciio-vol`; this repository
+The library / connector is named `fits-hdf5-vol`; this repository
 (`grc-iit/FITS-HDF5-VOL`) is its source home.
 
 **Status:** v1.0.0-rc — M1 through M6 complete. Read-only. 64 ctest cases
 pass against synthetic fixtures, the astropy public test corpus, and the
 local NRAO `ftt4b` corpus. The C-level subset is also clean under
 `-fsanitize=address,undefined` with leak detection enabled. The same
-`libsciio_vol.so` runs unchanged on HDF5 1.14.x and 2.1.x. A permanent
+`libfits_hdf5_vol.so` runs unchanged on HDF5 1.14.x and 2.1.x. A permanent
 VOL connector value from The HDF Group is pending; the current `510` is
 provisional and may change before the v1.0.0 tag.
 
@@ -29,7 +29,7 @@ cmake --build build -j$(nproc)
 
 # 3. Point HDF5 at the connector and read any FITS file with stock tools.
 export HDF5_PLUGIN_PATH=$PWD/build
-export HDF5_VOL_CONNECTOR=sciio
+export HDF5_VOL_CONNECTOR=fits
 h5ls -r path/to/any.fits        # FITS now looks like HDF5
 ```
 
@@ -57,7 +57,7 @@ What an unmodified HDF5 app can do today against any FITS file:
   fails with a clear v2-deferred error.
 
 What's deferred:
-- Writing FITS — out of scope for v1. Sciio-vol is read-only by design.
+- Writing FITS — out of scope for v1. Fits-hdf5-vol is read-only by design.
   See `tools/h5_to_fits.c` for a separate one-way HDF5→FITS converter.
 - Vlen members inside the compound row view (per-column vlen still works).
 - Vlen-string columns (TFORM 'PA').
@@ -72,14 +72,14 @@ What's deferred:
 sudo apt install libcfitsio-dev libhdf5-dev cmake gcc
 ```
 
-### Build sciio-vol
+### Build fits-hdf5-vol
 
 ```bash
 cmake -S . -B build
 cmake --build build -j$(nproc)
 ```
 
-Outputs: `build/libsciio_vol.so` plus the demo utilities (`fits_to_h5`,
+Outputs: `build/libfits_hdf5_vol.so` plus the demo utilities (`fits_to_h5`,
 `h5_to_fits`, `fits_compare`) under `build/`. The `.c` sources for the
 utilities live in `tools/`; the binaries land in `build/` after the build.
 
@@ -93,7 +93,7 @@ ctest --test-dir build
 ### Optional: Building HDF5 from source
 
 Only needed if your distro HDF5 is older than 1.14.3, or you want to
-exercise sciio-vol against HDF5 2.1.x:
+exercise fits-hdf5-vol against HDF5 2.1.x:
 
 ```bash
 git clone https://github.com/HDFGroup/hdf5
@@ -106,7 +106,7 @@ cmake -S hdf5 -B hdf5/build \
 cmake --build hdf5/build -j$(nproc)
 cmake --install hdf5/build
 
-# Then build sciio-vol against it:
+# Then build fits-hdf5-vol against it:
 cmake -S . -B build -DCMAKE_PREFIX_PATH=$HOME/opt/hdf5-2.1
 cmake --build build -j$(nproc)
 LD_LIBRARY_PATH=$HOME/opt/hdf5-2.1/lib ctest --test-dir build
@@ -118,7 +118,7 @@ Two ways. **Environment-variable form** — zero source change to your app:
 
 ```bash
 export HDF5_PLUGIN_PATH=$PWD/build
-export HDF5_VOL_CONNECTOR=sciio
+export HDF5_VOL_CONNECTOR=fits
 # If you built HDF5 from source: export LD_LIBRARY_PATH=$HOME/opt/hdf5-2.1/lib
 
 # Now any HDF5 program reads FITS as if it were HDF5:
@@ -126,10 +126,10 @@ h5ls -r some.fits
 h5dump -A some.fits
 ```
 
-**Programmatic FAPL form** — if you only want sciio-vol on specific files:
+**Programmatic FAPL form** — if you only want fits-hdf5-vol on specific files:
 
 ```c
-hid_t vol = H5VLregister_connector_by_name("sciio", H5P_DEFAULT);
+hid_t vol = H5VLregister_connector_by_name("fits", H5P_DEFAULT);
 hid_t fapl = H5Pcreate(H5P_FILE_ACCESS);
 H5Pset_vol(fapl, vol, NULL);
 hid_t fid = H5Fopen("obs.fits", H5F_ACC_RDONLY, fapl);
@@ -137,9 +137,9 @@ hid_t fid = H5Fopen("obs.fits", H5F_ACC_RDONLY, fapl);
 
 ## End-to-end example: convert a FITS file to HDF5 and back
 
-`tools/` ships three small utilities. **`fits_to_h5`** uses sciio-vol on the
+`tools/` ships three small utilities. **`fits_to_h5`** uses fits-hdf5-vol on the
 input side and the native HDF5 VOL on the output side. **`h5_to_fits`** does
-the reverse direction with CFITSIO directly (sciio-vol is read-only). 
+the reverse direction with CFITSIO directly (fits-hdf5-vol is read-only). 
 **`fits_compare`** does a byte-by-byte HDU-pixel comparison via CFITSIO.
 
 A complete round-trip on a small public FITS file (the astropy
@@ -154,7 +154,7 @@ curl -L -o roundtrip/file007.fits \
     https://github.com/astropy/astropy-data/raw/main/galactic_center/gc_2mass_k.fits
 # (any real FITS file works; substitute your own path if you have one.)
 
-# 1. FITS → native HDF5 (via sciio-vol).
+# 1. FITS → native HDF5 (via fits-hdf5-vol).
 ./build/fits_to_h5 roundtrip/file007.fits roundtrip/file007.h5
 
 # 2. HDF5 → restored FITS (via CFITSIO).
@@ -166,7 +166,7 @@ curl -L -o roundtrip/file007.fits \
 ```
 
 The intermediate `roundtrip/file007.h5` is a **native HDF5 file**. Inspect
-it with stock HDF5 tools — sciio-vol is not needed:
+it with stock HDF5 tools — fits-hdf5-vol is not needed:
 
 ```bash
 h5ls -r roundtrip/file007.h5
@@ -184,14 +184,14 @@ with h5py.File("roundtrip/file007.h5", "r") as f:
     bitpix = int(f["HDU0"].attrs["BITPIX"]) # 16
 ```
 
-## Reading a FITS file directly through sciio-vol (no conversion)
+## Reading a FITS file directly through fits-hdf5-vol (no conversion)
 
 You can skip the conversion entirely and treat FITS as live HDF5:
 
 ```python
 import os, h5py
 os.environ["HDF5_PLUGIN_PATH"]    = "/path/to/FITS-HDF5-VOL/build"
-os.environ["HDF5_VOL_CONNECTOR"]  = "sciio"
+os.environ["HDF5_VOL_CONNECTOR"]  = "fits"
 # If you built HDF5 from source, also set LD_LIBRARY_PATH to its lib dir.
 
 with h5py.File("some.fits", "r") as f:
@@ -213,9 +213,9 @@ issues against your HDF5 instance.
 
 ```
 FITS-HDF5-VOL/
-├── src/sciio_vol_connector.c     VOL callback layer
+├── src/fits_hdf5_vol_connector.c     VOL callback layer
 ├── adapters/fits/fits_adapter.c  FITS adapter (CFITSIO-backed)
-├── include/sciio/                Public headers (adapter.h, sciio_vol.h)
+├── include/fits_hdf5/                Public headers (adapter.h, fits_hdf5_vol.h)
 ├── tools/                        Demo utility sources (fits_to_h5.c, h5_to_fits.c, fits_compare.c)
 ├── tests/
 │   ├── integration/              C tests + h5py smoke + golden runner script

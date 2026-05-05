@@ -21,8 +21,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "sciio/adapter.h"
-#include "sciio/registry.h"
+#include "fits_hdf5/adapter.h"
+#include "fits_hdf5/registry.h"
 
 static void mutate(unsigned char *buf, size_t n, unsigned int *rng)
 {
@@ -51,7 +51,7 @@ static int load_file(const char *path, unsigned char **out_buf, size_t *out_n)
 
 static int try_one(const unsigned char *bytes, size_t n)
 {
-    char tmp[] = "/tmp/sciio_fuzz_XXXXXX.fits";
+    char tmp[] = "/tmp/fits_fuzz_XXXXXX.fits";
     int fd = mkstemps(tmp, 5);
     if (fd < 0) return -1;
     write(fd, bytes, n);
@@ -59,7 +59,7 @@ static int try_one(const unsigned char *bytes, size_t n)
 
     /* Drive the adapter directly; we're testing the FITS parser, not the
      * HDF5 path. Crash here is a hard failure the harness reports. */
-    const sciio_adapter_t *a = &sciio_fits_adapter;
+    const fits_adapter_t *a = &fits_adapter;
     adapter_probe_result_t pr = {0};
     a->probe(tmp, &pr);
     if (pr.confidence > 0) {

@@ -111,7 +111,7 @@ static int build_edge_keywords(const char *path)
 
     /* HISTORY records — two of them. */
     fits_write_history(fp, "Created by build_fixtures", &s); CHECK(s);
-    fits_write_history(fp, "For sciio-vol M2.7 test corpus", &s); CHECK(s);
+    fits_write_history(fp, "For fits-hdf5-vol M2.7 test corpus", &s); CHECK(s);
 
     fits_close_file(fp, &s); CHECK(s);
     return 0;

@@ -30,7 +30,7 @@ int main(void)
     assert(connector && "HDF5_VOL_CONNECTOR must be set for this test");
     assert(plugin    && "HDF5_PLUGIN_PATH must be set for this test");
 
-    char path[] = "/tmp/sciio_env_XXXXXX.fits";
+    char path[] = "/tmp/fits_env_XXXXXX.fits";
     int fd = mkstemps(path, 5);
     assert(fd >= 0);
     close(fd);

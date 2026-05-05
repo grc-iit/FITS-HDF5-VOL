@@ -12,7 +12,7 @@
 
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
 /* Walk the HDF5 error stack and look for our specific message substring. */
 static herr_t look_for_msg(unsigned n, const H5E_error2_t *err, void *user)
@@ -26,11 +26,11 @@ static herr_t look_for_msg(unsigned n, const H5E_error2_t *err, void *user)
 
 int main(void)
 {
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
 
     /* Empty file. */
-    char path[] = "/tmp/sciio_nf_XXXXXX.bin";
+    char path[] = "/tmp/fits_nf_XXXXXX.bin";
     int fd = mkstemps(path, 4);
     assert(fd >= 0);
     /* Write a single non-FITS byte so the file isn't degenerate-empty. */

@@ -11,7 +11,7 @@
 
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
 #define FILE005 "/home/isa-grc/fits-tests/ftt4b/file005.fits"
 
@@ -32,7 +32,7 @@ int main(void)
      * (the file genuinely has 7 TEXTFILE cards). */
     freopen("/dev/null", "w", stderr);
 
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
     hid_t fid = H5Fopen(FILE005, H5F_ACC_RDONLY, fapl);
     assert(fid >= 0);

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to sciio-vol. Format roughly follows
+All notable changes to fits-hdf5-vol. Format roughly follows
 [Keep a Changelog](https://keepachangelog.com/) with one section per
 development milestone (M1 through M6).
 
@@ -10,32 +10,32 @@ Hardened. Ready for v1.0.0 once a real VOL connector value is registered with
 The HDF Group (currently `510`, provisional).
 
 ### Added (M6 — hardening)
-- `SCIIO_SANITIZE=ON` CMake option enabling `-fsanitize=address,undefined`.
+- `FITS_SANITIZE=ON` CMake option enabling `-fsanitize=address,undefined`.
 - 57/57 C-level ctest cases pass under ASan + UBSan with leak detection on.
-- `tests/integration/perf_smoke.c` — measures sciio-vol overhead vs. direct
+- `tests/integration/perf_smoke.c` — measures fits-hdf5-vol overhead vs. direct
   CFITSIO. Within the documented 10% overhead budget on real-archive image sizes.
 - `tests/integration/fuzz_smoke.c` — deterministic mutation harness on the
   FITS header parse path; 1000-iteration ASan run completes without crashes.
-- `H5VL` ABI compatibility canary: same `libsciio_vol.so` built against
+- `H5VL` ABI compatibility canary: same `libfits_hdf5_vol.so` built against
   HDF5 2.1.1 loads and runs end-to-end under HDF5 1.14.3 (`H5VL_VERSION=3`,
   `sizeof(H5VL_class_t)=632` confirmed identical across both lines).
 
 ## [0.5.0] — M5 — API freeze
 
 ### Added
-- `sciio_adapter_t` vtable (function-pointer table). Adapters export a
-  single `const sciio_adapter_t` instance; the connector dispatches every
+- `fits_adapter_t` vtable (function-pointer table). Adapters export a
+  single `const fits_adapter_t` instance; the connector dispatches every
   call through it. Replaces the previous global-function API.
-- `include/sciio/registry.h` + `src/registry.c` — compile-time adapter
-  registry, `sciio_dispatch_probe()` picks the highest-confidence match.
-- `SCIIO_ADAPTER_API_VERSION_MAJOR/MINOR` macros + semver policy.
+- `include/fits_hdf5/registry.h` + `src/registry.c` — compile-time adapter
+  registry, `fits_dispatch_probe()` picks the highest-confidence match.
+- `FITS_ADAPTER_API_VERSION_MAJOR/MINOR` macros + semver policy.
 - `docs/format-adapter-api.md` — canonical reference for adapter authors.
   Includes paper-review walkthroughs for DICOM and GRIB.
-- `cmake --install` lays down `libsciio_vol.so`, `include/sciio/*.h`, and
-  `lib/pkgconfig/sciio-vol.pc`.
+- `cmake --install` lays down `libfits_hdf5_vol.so`, `include/fits_hdf5/*.h`, and
+  `lib/pkgconfig/fits-hdf5-vol.pc`.
 
 ### Changed
-- FITS adapter functions all `static`; only `sciio_fits_adapter` exported.
+- FITS adapter functions all `static`; only `fits_adapter` exported.
 
 ### Verified
 - DICOM and GRIB paper reviews completed; the abstract shape supports both
@@ -96,15 +96,15 @@ The HDF Group (currently `510`, provisional).
 ## [0.1.0] — M1 — Skeleton
 
 ### Added
-- CMake build producing `libsciio_vol.so`.
+- CMake build producing `libfits_hdf5_vol.so`.
 - Terminal VOL connector that registers via
-  `H5VLregister_connector_by_name("sciio")`.
+  `H5VLregister_connector_by_name("fits")`.
 - `H5Fopen` / `H5Gopen("/")` round-trip; capability flags set conservatively.
-- `HDF5_VOL_CONNECTOR=sciio` + `HDF5_PLUGIN_PATH` auto-load verified.
+- `HDF5_VOL_CONNECTOR=fits` + `HDF5_PLUGIN_PATH` auto-load verified.
 
 ## Unsupported in v1 (out of scope)
 
-- Writing FITS — sciio-vol is read-only by design.
+- Writing FITS — fits-hdf5-vol is read-only by design.
 - Tile-compressed image data reads (deferred to v2).
 - WCS interpretation (keywords surfaced verbatim).
 - Parallel / MPI-IO.

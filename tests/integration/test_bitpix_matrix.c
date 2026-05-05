@@ -8,10 +8,10 @@
 
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
-#ifndef SCIIO_FIXTURES_DIR
-#error "SCIIO_FIXTURES_DIR must be defined"
+#ifndef FITS_FIXTURES_DIR
+#error "FITS_FIXTURES_DIR must be defined"
 #endif
 
 #define MX_ROWS 2
@@ -53,9 +53,9 @@ static void check_dtype(hid_t did, H5T_class_t cls_expected, size_t size_expecte
 
 int main(void)
 {
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
-    hid_t fid = H5Fopen(SCIIO_FIXTURES_DIR "/bitpix_matrix.fits", H5F_ACC_RDONLY, fapl);
+    hid_t fid = H5Fopen(FITS_FIXTURES_DIR "/bitpix_matrix.fits", H5F_ACC_RDONLY, fapl);
     assert(fid >= 0);
 
     int hdu;

@@ -1,5 +1,5 @@
 /* M1.4/M2.4 verification: H5Fopen → H5Gopen("/") → H5Gclose → H5Fclose
- * round-trip through the sciio-vol connector against a real FITS file. */
+ * round-trip through the fits-hdf5-vol connector against a real FITS file. */
 
 #define _DEFAULT_SOURCE   /* mkstemps */
 
@@ -11,7 +11,7 @@
 #include <fitsio.h>
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
 static void build_minimal_fits(const char *path)
 {
@@ -28,24 +28,24 @@ static void build_minimal_fits(const char *path)
 
 int main(void)
 {
-    hid_t vol_id = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol_id = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     assert(vol_id >= 0);
 
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS);
     assert(fapl >= 0);
     assert(H5Pset_vol(fapl, vol_id, NULL) >= 0);
 
-    char path[] = "/tmp/sciio_oc_XXXXXX.fits";
+    char path[] = "/tmp/fits_oc_XXXXXX.fits";
     int fd = mkstemps(path, 5);
     assert(fd >= 0);
     close(fd);
     build_minimal_fits(path);
 
     hid_t fid = H5Fopen(path, H5F_ACC_RDONLY, fapl);
-    assert(fid >= 0 && "H5Fopen via sciio-vol failed");
+    assert(fid >= 0 && "H5Fopen via fits-hdf5-vol failed");
 
     hid_t gid = H5Gopen2(fid, "/", H5P_DEFAULT);
-    assert(gid >= 0 && "H5Gopen2 of root via sciio-vol failed");
+    assert(gid >= 0 && "H5Gopen2 of root via fits-hdf5-vol failed");
 
     assert(H5Gclose(gid) >= 0);
     assert(H5Fclose(fid) >= 0);

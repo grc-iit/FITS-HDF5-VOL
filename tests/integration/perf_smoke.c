@@ -1,6 +1,6 @@
 /* M6.3 performance smoke: warm-cache H5Dread of an image HDU through
- * sciio-vol vs the same pixels read directly via CFITSIO. Asserts the
- * sciio-vol overhead stays within's 10% budget. */
+ * fits-hdf5-vol vs the same pixels read directly via CFITSIO. Asserts the
+ * fits-hdf5-vol overhead stays within's 10% budget. */
 
 #include <assert.h>
 #include <stdio.h>
@@ -11,7 +11,7 @@
 #include <fitsio.h>
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
 static double elapsed(struct timespec a, struct timespec b)
 {
@@ -56,8 +56,8 @@ int main(int argc, char **argv)
     double t_cfitsio = elapsed(t0, t1) / iters;
     fits_close_file(fp, &s);
 
-    /* sciio-vol path. */
-    hid_t vol  = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    /* fits-hdf5-vol path. */
+    hid_t vol  = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
     hid_t fid  = H5Fopen(path, H5F_ACC_RDONLY, fapl);
     hid_t did  = H5Dopen2(fid, "/HDU0/data", H5P_DEFAULT);
@@ -70,16 +70,16 @@ int main(int argc, char **argv)
         H5Dread(did, tid, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf);
     }
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    double t_sciio = elapsed(t0, t1) / iters;
+    double t_fits = elapsed(t0, t1) / iters;
 
     H5Tclose(tid); H5Dclose(did); H5Fclose(fid);
     H5Pclose(fapl); H5VLclose(vol);
     free(buf);
 
-    double overhead = (t_sciio - t_cfitsio) / t_cfitsio * 100.0;
+    double overhead = (t_fits - t_cfitsio) / t_cfitsio * 100.0;
     printf("file=%s  bitpix=%d  nelem=%ld  iters=%d\n", path, bitpix, nelem, iters);
     printf("  CFITSIO direct:   %.3f ms / read\n", t_cfitsio * 1e3);
-    printf("  sciio-vol H5Dread: %.3f ms / read\n", t_sciio   * 1e3);
+    printf("  fits-hdf5-vol H5Dread: %.3f ms / read\n", t_fits   * 1e3);
     printf("  overhead:         %+.1f%%  (plan budget: ≤ 10%%)\n", overhead);
 
     /* Plan §8.3: within 10% on warm cache. Allow some slack on small images

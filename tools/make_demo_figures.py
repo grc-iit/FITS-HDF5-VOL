@@ -2,7 +2,7 @@
 """Generate the meeting-demo figure set into demo/.
 
 Premise: every figure is produced by reading FITS through the HDF5 API
-(h5py opens .fits files transparently via sciio-vol — NO conversion to .h5
+(h5py opens .fits files transparently via fits-hdf5-vol — NO conversion to .h5
 happens). Each figure stands alone — open one, read its title, you
 understand the point.
 
@@ -14,7 +14,7 @@ import argparse, os, subprocess, sys, time
 from pathlib import Path
 
 os.environ.setdefault("HDF5_PLUGIN_PATH",   str(Path.cwd() / "build"))
-os.environ.setdefault("HDF5_VOL_CONNECTOR", "sciio")
+os.environ.setdefault("HDF5_VOL_CONNECTOR", "fits")
 
 import h5py                            # noqa: E402
 import numpy as np                     # noqa: E402
@@ -51,14 +51,14 @@ plt.rcParams.update({
 def fig_architecture():
     fig, ax = plt.subplots(figsize=(9, 6))
     ax.set_xlim(0, 10); ax.set_ylim(0, 10); ax.axis("off")
-    ax.set_title("sciio-vol — how a FITS file becomes accessible through the HDF5 API",
+    ax.set_title("fits-hdf5-vol — how a FITS file becomes accessible through the HDF5 API",
                  pad=14)
 
     boxes = [
         (1, 8.2, "HDF5 application\n(h5py / h5dump / your C code)",        "#E8F1FA"),
         (1, 6.4, "HDF5 library 2.1.x\n(VOL dispatch via H5VL_VERSION=3)",   "#D6E6F4"),
-        (1, 4.6, "sciio-vol terminal connector\n(libsciio_vol.so)",        "#FFE7B5"),
-        (1, 2.8, "FITS adapter (vtable: sciio_fits_adapter)\n+ CFITSIO 4.x", "#FFD3B0"),
+        (1, 4.6, "fits-hdf5-vol terminal connector\n(libfits_hdf5_vol.so)",        "#FFE7B5"),
+        (1, 2.8, "FITS adapter (vtable: fits_adapter)\n+ CFITSIO 4.x", "#FFD3B0"),
         (1, 1.0, "obs.fits  (untouched on disk)",                           "#D9F0D3"),
     ]
     for x, y, label, col in boxes:
@@ -87,7 +87,7 @@ def fig_architecture():
 # ---------------------------------------------------------------------------
 def fig_real_image():
     """Open the HorseHead Nebula FITS file (real UK Schmidt photographic plate
-    from astropy's public tutorials data) through h5py + sciio-vol and render
+    from astropy's public tutorials data) through h5py + fits-hdf5-vol and render
     the image. The file on disk is .fits, not .h5 — no conversion involved."""
     if ARG_IMAGE is not None:
         src = Path(ARG_IMAGE)
@@ -119,7 +119,7 @@ def fig_real_image():
     im = ax.imshow(data, cmap="bone", vmin=vmin, vmax=vmax, origin="lower")
     title_obj = attrs.get("OBJECT", src.name)
     title_tel = attrs.get("TELESCOP", "")
-    ax.set_title(f"Real FITS file read live through sciio-vol\n"
+    ax.set_title(f"Real FITS file read live through fits-hdf5-vol\n"
                  f"{src.name}  —  {title_tel}  ({title_obj})\n"
                  f"shape={data.shape}   dtype={data.dtype}",
                  pad=10)
@@ -134,7 +134,7 @@ def fig_real_image():
              "Code:  with h5py.File('HorseHead.fits') as f:  arr = f['HDU0/data'][...]\n"
              f"Header attrs (read live, no conversion):  {info}",
              ha="center", fontsize=8.5, family="monospace", color="#333")
-    fig.savefig(DEMO / "fig02_real_image_via_sciio.png")
+    fig.savefig(DEMO / "fig02_real_image_via_fits.png")
     plt.close(fig)
 
 
@@ -173,7 +173,7 @@ def fig_live_table_read():
     axes[1].set_title("D25 distribution")
     axes[1].grid(alpha=0.3)
 
-    fig.suptitle(f"Live h5py read of ASCII Table from {src.name} via sciio-vol\n"
+    fig.suptitle(f"Live h5py read of ASCII Table from {src.name} via fits-hdf5-vol\n"
                  f"{nrows} rows × 7 columns — file is FITS on disk; HDF5 API does the talking",
                  fontsize=11, fontweight="bold")
     fig.text(0.5, 0.005,
@@ -198,20 +198,20 @@ def fig_performance():
         ("file007.fits", "512×512 int16",  500),
         ("file010.fits", "240×120 int16", 2000),
     ]
-    labels, t_cf, t_sciio = [], [], []
+    labels, t_cf, t_fits = [], [], []
     for fname, label, iters in cases:
         path = FTT4B / fname
         if not path.exists(): continue
         out = subprocess.run([str(BUILD / "perf_smoke"), str(path), str(iters)],
                              env=env, capture_output=True, text=True).stdout
-        cf = sciio = None
+        cf = fits = None
         for line in out.splitlines():
             if "CFITSIO direct" in line:
                 cf = float(line.split(":")[1].strip().split()[0])
-            elif "sciio-vol" in line:
-                sciio = float(line.split(":")[1].strip().split()[0])
-        if cf is None or sciio is None: continue
-        labels.append(label); t_cf.append(cf); t_sciio.append(sciio)
+            elif "fits-hdf5-vol" in line:
+                fits = float(line.split(":")[1].strip().split()[0])
+        if cf is None or fits is None: continue
+        labels.append(label); t_cf.append(cf); t_fits.append(fits)
 
     if not labels:
         print("  skipping fig04: no cases ran")
@@ -220,20 +220,20 @@ def fig_performance():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     x = np.arange(len(labels)); w = 0.35
     ax1.bar(x - w/2, t_cf,    w, label="CFITSIO direct",      color="#5B9BD5")
-    ax1.bar(x + w/2, t_sciio, w, label="sciio-vol H5Dread",   color="#ED7D31")
+    ax1.bar(x + w/2, t_fits, w, label="fits-hdf5-vol H5Dread",   color="#ED7D31")
     ax1.set_xticks(x); ax1.set_xticklabels(labels)
     ax1.set_ylabel("ms / read (warm cache, mean of N iters)")
     ax1.set_title("Per-read latency  (lower = better)")
     ax1.legend(); ax1.grid(axis="y", alpha=0.3)
 
-    overhead = [(s - c) / c * 100 for c, s in zip(t_cf, t_sciio)]
+    overhead = [(s - c) / c * 100 for c, s in zip(t_cf, t_fits)]
     colors = ["#70AD47" if v <= 10 else "#E8A33D" if v <= 25 else "#C00000"
               for v in overhead]
     bars = ax2.bar(labels, overhead, color=colors)
     ax2.axhline(10, ls="--", color="#666", lw=1)
     ax2.text(len(labels) - 0.5, 10.6, "plan §8.3 budget: 10%",
              ha="right", color="#666", fontsize=9)
-    ax2.set_ylabel("sciio-vol overhead (%)")
+    ax2.set_ylabel("fits-hdf5-vol overhead (%)")
     ax2.set_title("Connector overhead vs direct CFITSIO")
     for bar, v in zip(bars, overhead):
         ax2.text(bar.get_x() + bar.get_width()/2, v + (0.5 if v >= 0 else -1.5),
@@ -261,7 +261,7 @@ def fig_coverage():
         ax.text(bar.get_x() + bar.get_width()/2, n + 0.4, str(n),
                 ha="center", fontweight="bold")
     ax.set_ylabel("ctest cases")
-    ax.set_title(f"sciio-vol test coverage  —  {sum(counts)} / {sum(counts)} pass",
+    ax.set_title(f"fits-hdf5-vol test coverage  —  {sum(counts)} / {sum(counts)} pass",
                  pad=12)
     ax.set_ylim(0, max(counts) + 4)
     ax.grid(axis="y", alpha=0.3)
@@ -335,7 +335,7 @@ def fig_keyword_mapping():
 def main():
     global ARG_IMAGE, ARG_TABLE
     p = argparse.ArgumentParser(
-        description="Generate the sciio-vol meeting demo figure set. "
+        description="Generate the fits-hdf5-vol meeting demo figure set. "
                     "All FITS reads go through the HDF5 API — no conversion.")
     p.add_argument("fits_files", nargs="*", metavar="FITS",
                    help="positional FITS file(s). Used as --image. "
@@ -358,7 +358,7 @@ def main():
     print(f"Generating figures into {DEMO}")
     for name, fn in [
         ("fig01_architecture",          fig_architecture),
-        ("fig02_real_image_via_sciio",  fig_real_image),
+        ("fig02_real_image_via_fits",  fig_real_image),
         ("fig03_live_table_read",       fig_live_table_read),
         ("fig04_performance",           fig_performance),
         ("fig05_test_coverage",         fig_coverage),

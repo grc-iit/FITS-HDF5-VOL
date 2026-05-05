@@ -1,4 +1,4 @@
-/* Convert FITS → native HDF5 using sciio-vol on input, native VOL on output.
+/* Convert FITS → native HDF5 using fits-hdf5-vol on input, native VOL on output.
  * Demonstrates the "save FITS as HDF5" workflow with the current capabilities. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,8 +38,8 @@ int main(int argc, char **argv)
 {
     if (argc != 3) { fprintf(stderr, "usage: %s <src.fits> <dst.h5>\n", argv[0]); return 2; }
 
-    /* Source FAPL via sciio-vol */
-    hid_t vol = H5VLregister_connector_by_name("sciio", H5P_DEFAULT);
+    /* Source FAPL via fits-hdf5-vol */
+    hid_t vol = H5VLregister_connector_by_name("fits", H5P_DEFAULT);
     hid_t src_fapl = H5Pcreate(H5P_FILE_ACCESS);
     H5Pset_vol(src_fapl, vol, NULL);
 

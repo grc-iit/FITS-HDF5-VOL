@@ -1,6 +1,6 @@
-/* HDF5 → FITS converter. NOT part of sciio-vol (which is read-only); this
+/* HDF5 → FITS converter. NOT part of fits-hdf5-vol (which is read-only); this
  * uses CFITSIO directly to write the FITS side. Reads HDF5 via the native
- * VOL only — no sciio-vol involved.
+ * VOL only — no fits-hdf5-vol involved.
  *
  * Walks /HDU0..HDUn groups. For each group:
  *   - copies the `data` dataset to a new image HDU
@@ -108,7 +108,7 @@ int main(int argc, char **argv)
 {
     if (argc != 3) DIE("usage: h5_to_fits <src.h5> <dst.fits>");
 
-    /* Native HDF5 input — NO sciio-vol. */
+    /* Native HDF5 input — NO fits-hdf5-vol. */
     hid_t src = H5Fopen(argv[1], H5F_ACC_RDONLY, H5P_DEFAULT);
     if (src < 0) DIE("H5Fopen src");
 

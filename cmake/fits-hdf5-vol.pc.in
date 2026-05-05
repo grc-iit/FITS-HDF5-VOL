@@ -3,10 +3,10 @@ exec_prefix=${prefix}
 libdir=${exec_prefix}/@CMAKE_INSTALL_LIBDIR@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
-Name: sciio-vol
+Name: fits-hdf5-vol
 Description: Terminal HDF5 VOL connector for foreign scientific formats (FITS first)
-URL: https://github.com/sciio-vol/sciio-vol
+URL: https://github.com/fits-hdf5-vol/fits-hdf5-vol
 Version: @PROJECT_VERSION@
 Requires.private: hdf5 cfitsio
 Cflags: -I${includedir}
-Libs: -L${libdir} -lsciio_vol
+Libs: -L${libdir} -lfits_hdf5_vol

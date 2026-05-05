@@ -1,12 +1,12 @@
 /*
- * sciio-vol FITS adapter (M2.3 surface).
+ * fits-hdf5-vol FITS adapter (M2.3 surface).
  *
  * Implements the slice of the Format-Adapter API needed for HDU enumeration:
  * probe + open/close + root/object_kind. Group iteration, attributes, and
  * dataset I/O are added in M2.5/M2.6/M3 respectively.
  *
  * CFITSIO HDU numbering note: CFITSIO is 1-based (Primary HDU == 1) but the
- * sciio model and are 0-based ("HDU0" == Primary). This file stores
+ * fits model and are 0-based ("HDU0" == Primary). This file stores
  * the index 0-based and translates at the CFITSIO boundary.
  */
 
@@ -17,7 +17,7 @@
 
 #include <fitsio.h>
 
-#include "sciio/adapter.h"
+#include "fits_hdf5/adapter.h"
 
 /* ------------------------------------------------------------------ */
 /* Per-HDU descriptor                                                  */
@@ -244,7 +244,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
         int s2 = 0;
         if (fits_read_key_log(fp, "GROUPS", &groups, NULL, &s2) == 0 && groups) {
             fprintf(stderr,
-                "sciio-vol: HDU %d is a Random Groups HDU, which is not "
+                "fits-hdf5-vol: HDU %d is a Random Groups HDU, which is not "
                 "supported in v1. \n", i);
             goto fail;
         }
@@ -290,7 +290,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
                     int tc = 0; long repeat = 0, width = 0; s3 = 0;
                     if (fits_get_eqcoltype(fp, c, &tc, &repeat, &width, &s3) != 0) {
                         fprintf(stderr,
-                            "sciio-vol: HDU %d col %d: fits_get_eqcoltype failed (%d)\n",
+                            "fits-hdf5-vol: HDU %d col %d: fits_get_eqcoltype failed (%d)\n",
                             i, c, s3);
                         col->cf_typecode = 0;
                         continue;
@@ -300,7 +300,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
                     col->width = width;
                     if (cfitsio_col_to_adapter(tc, width, hdu_type, &col->scalar_type) != 0) {
                         fprintf(stderr,
-                            "sciio-vol: HDU %d col '%s': unsupported CFITSIO typecode %d, "
+                            "fits-hdf5-vol: HDU %d col '%s': unsupported CFITSIO typecode %d, "
                             "column will not surface\n", i, col->name, tc);
                         col->cf_typecode = 0;
                         continue;
@@ -310,7 +310,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
                     if (tc < 0) {
                         if (col->scalar_type.cls == ADAPTER_T_STRING) {
                             fprintf(stderr,
-                                "sciio-vol: HDU %d col '%s': vlen-string columns "
+                                "fits-hdf5-vol: HDU %d col '%s': vlen-string columns "
                                 "(TFORM 'PA') deferred; column hidden\n", i, col->name);
                             col->cf_typecode = 0;
                             continue;
@@ -333,7 +333,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
                         }
                         if (naxis > 8) {
                             fprintf(stderr,
-                                "sciio-vol: HDU %d col '%s': TDIM rank %d exceeds 8, "
+                                "fits-hdf5-vol: HDU %d col '%s': TDIM rank %d exceeds 8, "
                                 "skipping column\n", i, col->name, naxis);
                             col->cf_typecode = 0;
                             continue;
@@ -389,7 +389,7 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
         }
         if (dup) {
             fprintf(stderr,
-                "sciio-vol: HDU %d EXTNAME=\"%s\" collides with an earlier "
+                "fits-hdf5-vol: HDU %d EXTNAME=\"%s\" collides with an earlier "
                 "HDU; skipping soft link.\n", i, en);
             continue;
         }
@@ -669,7 +669,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
         status = 0;
         if (fits_read_keyn(fp, i, keyname, value, comment, &status) != 0) {
             fprintf(stderr,
-                "sciio-vol: HDU %d card %d: fits_read_keyn failed (status=%d), skipping.\n",
+                "fits-hdf5-vol: HDU %d card %d: fits_read_keyn failed (status=%d), skipping.\n",
                 desc->index, i, status);
             continue;
         }
@@ -698,7 +698,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
         status = 0;
         if (fits_get_keytype(value, &dtype, &status) != 0) {
             fprintf(stderr,
-                "sciio-vol: HDU %d \"%s\": fits_get_keytype failed (status=%d, value=\"%s\"), skipping.\n",
+                "fits-hdf5-vol: HDU %d \"%s\": fits_get_keytype failed (status=%d, value=\"%s\"), skipping.\n",
                 desc->index, keyname, status, value);
             continue;
         }
@@ -722,7 +722,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
         }
         if (dup) {
             fprintf(stderr,
-                "sciio-vol: HDU %d card %d: duplicate keyword \"%s\" — keeping "
+                "fits-hdf5-vol: HDU %d card %d: duplicate keyword \"%s\" — keeping "
                 "first occurrence; full card sequence available in __raw_header__.\n",
                 desc->index, i, a->name);
             free(a->name);
@@ -736,7 +736,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
                 int s2 = 0;
                 if (fits_read_key_lnglng(fp, keyname, &lv, comment, &s2) != 0) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d \"%s\": typed int read failed (status=%d), skipping.\n",
+                        "fits-hdf5-vol: HDU %d \"%s\": typed int read failed (status=%d), skipping.\n",
                         desc->index, keyname, s2);
                     free(a->name); memset(a, 0, sizeof(*a));
                     break;
@@ -752,7 +752,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
                 int s2 = 0;
                 if (fits_read_key_dbl(fp, keyname, &dv, comment, &s2) != 0) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d \"%s\": typed float read failed (status=%d), skipping.\n",
+                        "fits-hdf5-vol: HDU %d \"%s\": typed float read failed (status=%d), skipping.\n",
                         desc->index, keyname, s2);
                     free(a->name); memset(a, 0, sizeof(*a));
                     break;
@@ -768,7 +768,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
                 int s2 = 0;
                 if (fits_read_key_log(fp, keyname, &bv, comment, &s2) != 0) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d \"%s\": typed bool read failed (status=%d), skipping.\n",
+                        "fits-hdf5-vol: HDU %d \"%s\": typed bool read failed (status=%d), skipping.\n",
                         desc->index, keyname, s2);
                     free(a->name); memset(a, 0, sizeof(*a));
                     break;
@@ -787,7 +787,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
                 int s2 = 0;
                 if (fits_read_key_longstr(fp, keyname, &full, comment, &s2) != 0 || !full) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d \"%s\": fits_read_key_longstr failed (status=%d), skipping.\n",
+                        "fits-hdf5-vol: HDU %d \"%s\": fits_read_key_longstr failed (status=%d), skipping.\n",
                         desc->index, keyname, s2);
                     free(a->name); memset(a, 0, sizeof(*a));
                     break;
@@ -798,7 +798,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
                 fits_free_memory(full, &s2);
                 if (!a->str) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d \"%s\": out of memory copying string value, skipping.\n",
+                        "fits-hdf5-vol: HDU %d \"%s\": out of memory copying string value, skipping.\n",
                         desc->index, keyname);
                     free(a->name); memset(a, 0, sizeof(*a));
                     break;
@@ -811,7 +811,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
                 int s2 = 0;
                 if (fits_read_key_dblcmp(fp, keyname, cplx, comment, &s2) != 0) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d \"%s\": fits_read_key_dblcmp failed (status=%d), skipping.\n",
+                        "fits-hdf5-vol: HDU %d \"%s\": fits_read_key_dblcmp failed (status=%d), skipping.\n",
                         desc->index, keyname, s2);
                     free(a->name); memset(a, 0, sizeof(*a));
                     break;
@@ -825,7 +825,7 @@ static int parse_hdu_keywords(fitsfile *fp, fits_hdu_desc_t *desc)
             }
             default:
                 fprintf(stderr,
-                    "sciio-vol: HDU %d \"%s\": unsupported keyword type '%c', skipping.\n",
+                    "fits-hdf5-vol: HDU %d \"%s\": unsupported keyword type '%c', skipping.\n",
                     desc->index, keyname, dtype);
                 free(a->name); memset(a, 0, sizeof(*a));
                 break;
@@ -1037,7 +1037,7 @@ static int fits_dataset_type(adapter_object_t *ds, adapter_type_t *out)
         case DOUBLE_IMG:   out->cls = ADAPTER_T_FLOAT; out->size = 8; return 0;
         default:
             fprintf(stderr,
-                "sciio-vol: HDU %d: unsupported BITPIX=%d\n",
+                "fits-hdf5-vol: HDU %d: unsupported BITPIX=%d\n",
                 ds->hdu_index, bitpix);
             return -1;
     }
@@ -1133,7 +1133,7 @@ static int fits_dataset_read(adapter_object_t *ds,
 
         if (stride && stride[0] != 1) {
             fprintf(stderr,
-                "sciio-vol: column hyperslab stride!=1 not supported "
+                "fits-hdf5-vol: column hyperslab stride!=1 not supported "
                 "(col '%s', stride=%llu)\n",
                 col->name, (unsigned long long)stride[0]);
             return -1;
@@ -1164,7 +1164,7 @@ static int fits_dataset_read(adapter_object_t *ds,
                 if (fits_read_descript(f->fp, ds->col_index + 1, row,
                                        &row_repeat, &offset, &s3) != 0) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d col '%s' row %ld: read_descript status=%d\n",
+                        "fits-hdf5-vol: HDU %d col '%s' row %ld: read_descript status=%d\n",
                         ds->hdu_index, col->name, row, s3);
                     return -1;
                 }
@@ -1176,7 +1176,7 @@ static int fits_dataset_read(adapter_object_t *ds,
                 if (fits_read_col(f->fp, cf_dtype, ds->col_index + 1, row, 1,
                                   row_repeat, NULL, p, NULL, &s4) != 0) {
                     fprintf(stderr,
-                        "sciio-vol: HDU %d col '%s' row %ld: vlen read status=%d\n",
+                        "fits-hdf5-vol: HDU %d col '%s' row %ld: vlen read status=%d\n",
                         ds->hdu_index, col->name, row, s4);
                     free(p);
                     return -1;
@@ -1203,7 +1203,7 @@ static int fits_dataset_read(adapter_object_t *ds,
             if (fits_read_col(f->fp, TSTRING, ds->col_index + 1,
                               firstrow, 1, nrows, nul, ptrs, NULL, &status) != 0) {
                 fprintf(stderr,
-                    "sciio-vol: HDU %d col '%s': fits_read_col(TSTRING) status=%d\n",
+                    "fits-hdf5-vol: HDU %d col '%s': fits_read_col(TSTRING) status=%d\n",
                     ds->hdu_index, col->name, status);
                 free(flat); free(ptrs);
                 return -1;
@@ -1228,7 +1228,7 @@ static int fits_dataset_read(adapter_object_t *ds,
             cf_dtype = adapter_cfitsio_dtype(&col->scalar_type);
             if (cf_dtype == 0) {
                 fprintf(stderr,
-                    "sciio-vol: HDU %d col '%s': no CFITSIO read-type\n",
+                    "fits-hdf5-vol: HDU %d col '%s': no CFITSIO read-type\n",
                     ds->hdu_index, col->name);
                 return -1;
             }
@@ -1238,7 +1238,7 @@ static int fits_dataset_read(adapter_object_t *ds,
         if (fits_read_col(f->fp, cf_dtype, ds->col_index + 1,
                           firstrow, 1, nelements, NULL, dst, NULL, &status) != 0) {
             fprintf(stderr,
-                "sciio-vol: HDU %d col '%s': fits_read_col status=%d\n",
+                "fits-hdf5-vol: HDU %d col '%s': fits_read_col status=%d\n",
                 ds->hdu_index, col->name, status);
             return -1;
         }
@@ -1249,7 +1249,7 @@ static int fits_dataset_read(adapter_object_t *ds,
      * still introspectable so callers can identify the file. */
     if (ds->file->hdus[ds->hdu_index].compressed) {
         fprintf(stderr,
-            "sciio-vol: HDU %d is a tile-compressed image; H5Dread is not "
+            "fits-hdf5-vol: HDU %d is a tile-compressed image; H5Dread is not "
             "supported in v1 (planned for v2). Use H5Aiterate on the HDU "
             "group to inspect compression metadata.\n", ds->hdu_index);
         return -1;
@@ -1257,7 +1257,7 @@ static int fits_dataset_read(adapter_object_t *ds,
     /* M3.5 limit: stride/block must be NULL or all 1. M3.9 will lift this. */
     if (block) {
         for (int i = 0; ; ++i) { if (block[i] != 1) {
-            fprintf(stderr, "sciio-vol: adapter_dataset_read block!=1 not implemented yet (M3.9)\n");
+            fprintf(stderr, "fits-hdf5-vol: adapter_dataset_read block!=1 not implemented yet (M3.9)\n");
             return -1; } if (block[i] == 0) break; }
     }
 
@@ -1272,7 +1272,7 @@ static int fits_dataset_read(adapter_object_t *ds,
     if (fits_dataset_type(ds, &ty) != 0) return -1;
     int cf_dtype = adapter_cfitsio_dtype(&ty);
     if (cf_dtype == 0) {
-        fprintf(stderr, "sciio-vol: HDU %d: no CFITSIO dtype for adapter cls=%d size=%zu\n",
+        fprintf(stderr, "fits-hdf5-vol: HDU %d: no CFITSIO dtype for adapter cls=%d size=%zu\n",
                 ds->hdu_index, (int)ty.cls, ty.size);
         return -1;
     }
@@ -1286,7 +1286,7 @@ static int fits_dataset_read(adapter_object_t *ds,
         long c  = (long)count[i];
         long st = stride ? (long)stride[i] : 1;
         if (c < 1) {
-            fprintf(stderr, "sciio-vol: adapter_dataset_read count[%d]=%ld\n", i, c);
+            fprintf(stderr, "fits-hdf5-vol: adapter_dataset_read count[%d]=%ld\n", i, c);
             return -1;
         }
         fpixel[j] = s + 1;
@@ -1297,7 +1297,7 @@ static int fits_dataset_read(adapter_object_t *ds,
     int anynul = 0;
     if (fits_read_subset(f->fp, cf_dtype, fpixel, lpixel, inc,
                          /*nulval=*/NULL, dst, &anynul, &status) != 0) {
-        fprintf(stderr, "sciio-vol: HDU %d: fits_read_subset status=%d\n",
+        fprintf(stderr, "fits-hdf5-vol: HDU %d: fits_read_subset status=%d\n",
                 ds->hdu_index, status);
         return -1;
     }
@@ -1408,10 +1408,10 @@ static void fits_free_string(char *s) { free(s); }
 /* Adapter vtable export                                               */
 /* ------------------------------------------------------------------ */
 
-const sciio_adapter_t sciio_fits_adapter = {
+const fits_adapter_t fits_adapter = {
     .name              = "fits",
-    .api_version_major = SCIIO_ADAPTER_API_VERSION_MAJOR,
-    .api_version_minor = SCIIO_ADAPTER_API_VERSION_MINOR,
+    .api_version_major = FITS_ADAPTER_API_VERSION_MAJOR,
+    .api_version_minor = FITS_ADAPTER_API_VERSION_MINOR,
     .probe             = fits_probe,
     .open              = fits_open,
     .close             = fits_close,

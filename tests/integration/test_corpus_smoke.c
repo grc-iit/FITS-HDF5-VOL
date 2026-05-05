@@ -1,4 +1,4 @@
-/* M2 corpus smoke: structural traversal of a real FITS file via sciio-vol.
+/* M2 corpus smoke: structural traversal of a real FITS file via fits-hdf5-vol.
  *
  * Asserts:
  *   - H5Fopen succeeds (or fails, depending on argv[2])
@@ -15,7 +15,7 @@
 
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
 static int verbose = 0;
 
@@ -167,9 +167,9 @@ int main(int argc, char **argv)
     }
     const char *path = argv[1];
     int expect_reject = (argc == 3 && strcmp(argv[2], "reject") == 0);
-    if (getenv("SCIIO_CORPUS_VERBOSE")) verbose = 1;
+    if (getenv("FITS_CORPUS_VERBOSE")) verbose = 1;
 
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     assert(vol >= 0);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
 

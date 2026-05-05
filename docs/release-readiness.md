@@ -1,4 +1,4 @@
-# sciio-vol v1.0.0 Release-Readiness Audit
+# fits-hdf5-vol v1.0.0 Release-Readiness Audit
 
 Snapshot of every pre-release blocker identified during M1–M6, with the
 status today and what (if anything) needs to happen before tagging v1.0.0.
@@ -59,7 +59,7 @@ status today and what (if anything) needs to happen before tagging v1.0.0.
 | Item | Owner | Status |
 |---|---|---|
 | Register a permanent VOL connector value with The HDF Group | maintainer | **OPEN** — currently provisional `510` |
-| Document h5py upstream caveat in README | this audit | ✅ in README "Reading a FITS file directly through sciio-vol" |
+| Document h5py upstream caveat in README | this audit | ✅ in README "Reading a FITS file directly through fits-hdf5-vol" |
 | Document HDF5-instance-separation rule | this audit | ✅ in README h5py section |
 
 ## Tracked v1.x backlog (post-v1.0.0)

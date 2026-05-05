@@ -13,7 +13,7 @@
 #include <fitsio.h>
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
 static void build_fixture(const char *path)
 {
@@ -39,12 +39,12 @@ static void build_fixture(const char *path)
 
 int main(void)
 {
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     assert(vol >= 0);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS);
     assert(H5Pset_vol(fapl, vol, NULL) >= 0);
 
-    char path[] = "/tmp/sciio_attr_XXXXXX.fits";
+    char path[] = "/tmp/fits_attr_XXXXXX.fits";
     int fd = mkstemps(path, 5);
     assert(fd >= 0);
     close(fd);

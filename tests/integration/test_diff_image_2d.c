@@ -10,19 +10,19 @@
 
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
-#ifndef SCIIO_FIXTURES_DIR
-#error "SCIIO_FIXTURES_DIR must be defined"
+#ifndef FITS_FIXTURES_DIR
+#error "FITS_FIXTURES_DIR must be defined"
 #endif
 
 static hid_t open_fixture(hid_t *out_vol, hid_t *out_fapl)
 {
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     assert(vol >= 0);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS);
     assert(H5Pset_vol(fapl, vol, NULL) >= 0);
-    hid_t fid = H5Fopen(SCIIO_FIXTURES_DIR "/image_2d.fits", H5F_ACC_RDONLY, fapl);
+    hid_t fid = H5Fopen(FITS_FIXTURES_DIR "/image_2d.fits", H5F_ACC_RDONLY, fapl);
     assert(fid >= 0);
     *out_vol = vol;
     *out_fapl = fapl;

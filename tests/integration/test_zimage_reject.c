@@ -9,18 +9,18 @@
 
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
-#ifndef SCIIO_CORPUS_DIR
-#error "SCIIO_CORPUS_DIR must be defined"
+#ifndef FITS_CORPUS_DIR
+#error "FITS_CORPUS_DIR must be defined"
 #endif
 
 int main(void)
 {
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
 
-    hid_t fid = H5Fopen(SCIIO_CORPUS_DIR "/comp.fits", H5F_ACC_RDONLY, fapl);
+    hid_t fid = H5Fopen(FITS_CORPUS_DIR "/comp.fits", H5F_ACC_RDONLY, fapl);
     assert(fid >= 0 && "comp.fits must open for introspection");
 
     /* HDU1 is the tile-compressed image extension. The group must exist with

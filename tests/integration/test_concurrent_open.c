@@ -8,10 +8,10 @@
 
 #include <hdf5.h>
 
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
-#ifndef SCIIO_FIXTURES_DIR
-#error "SCIIO_FIXTURES_DIR must be defined"
+#ifndef FITS_FIXTURES_DIR
+#error "FITS_FIXTURES_DIR must be defined"
 #endif
 
 typedef struct { int n; char names[8][16]; } collect_t;
@@ -25,12 +25,12 @@ static herr_t collect(hid_t g, const char *name, const H5L_info2_t *i, void *u)
 
 int main(void)
 {
-    hid_t vol = H5VLregister_connector_by_name(SCIIO_VOL_NAME, H5P_DEFAULT);
+    hid_t vol = H5VLregister_connector_by_name(FITS_HDF5_VOL_NAME, H5P_DEFAULT);
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS); H5Pset_vol(fapl, vol, NULL);
 
     /* Open two distinct fixtures concurrently. */
-    hid_t f_a = H5Fopen(SCIIO_FIXTURES_DIR "/image_2d.fits",  H5F_ACC_RDONLY, fapl);
-    hid_t f_b = H5Fopen(SCIIO_FIXTURES_DIR "/multi_hdu.fits", H5F_ACC_RDONLY, fapl);
+    hid_t f_a = H5Fopen(FITS_FIXTURES_DIR "/image_2d.fits",  H5F_ACC_RDONLY, fapl);
+    hid_t f_b = H5Fopen(FITS_FIXTURES_DIR "/multi_hdu.fits", H5F_ACC_RDONLY, fapl);
     assert(f_a >= 0 && f_b >= 0);
 
     /* Each must report its own root contents. */

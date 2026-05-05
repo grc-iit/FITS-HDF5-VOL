@@ -1,5 +1,5 @@
 /*
- * sciio-vol: terminal HDF5 VOL connector for foreign scientific formats.
+ * fits-hdf5-vol: terminal HDF5 VOL connector for foreign scientific formats.
  *
  * v0.0.1 — M1.3: register-only no-op skeleton. Every callback is a stub
  * that emits H5E_UNSUPPORTED. M1.4 will implement file_open + group_open
@@ -16,38 +16,38 @@
 #include <H5VLconnector_passthru.h>   /* H5VLwrap_register */
 #include <H5PLextern.h>
 
-#include "sciio/adapter.h"
-#include "sciio/registry.h"
-#include "sciio/sciio_vol.h"
+#include "fits_hdf5/adapter.h"
+#include "fits_hdf5/registry.h"
+#include "fits_hdf5/fits_hdf5_vol.h"
 
 /* ------------------------------------------------------------------ */
 /* In-memory object types                                              */
 /* ------------------------------------------------------------------ */
 
-typedef enum { SCIIO_OBJ_FILE, SCIIO_OBJ_GROUP, SCIIO_OBJ_ATTR, SCIIO_OBJ_DATASET } sciio_obj_kind_t;
+typedef enum { FITS_OBJ_FILE, FITS_OBJ_GROUP, FITS_OBJ_ATTR, FITS_OBJ_DATASET } fits_obj_kind_t;
 
-typedef struct sciio_file_s {
-    sciio_obj_kind_t       kind;     /* must be first; group also starts with kind */
+typedef struct fits_file_s {
+    fits_obj_kind_t       kind;     /* must be first; group also starts with kind */
     char                  *path;
-    const sciio_adapter_t *adapter;  /* the adapter that opened this file */
+    const fits_adapter_t *adapter;  /* the adapter that opened this file */
     adapter_file_t        *adapter_file;
     int                    refcount; /* H5Iget_file_id may take an extra ref */
-} sciio_file_t;
+} fits_file_t;
 
-typedef struct sciio_group_s {
-    sciio_obj_kind_t  kind;
-    sciio_file_t     *file;
+typedef struct fits_group_s {
+    fits_obj_kind_t  kind;
+    fits_file_t     *file;
     char             *name;          /* full path, e.g. "/" */
     adapter_object_t *adapter_obj;   /* NULL for borrowed-root */
     bool              owns_adapter_obj;
-} sciio_group_t;
+} fits_group_t;
 
-static sciio_file_t *sciio_file_new(const char *path, const sciio_adapter_t *adapter,
+static fits_file_t *fits_file_new(const char *path, const fits_adapter_t *adapter,
                                      adapter_file_t *af)
 {
-    sciio_file_t *f = calloc(1, sizeof(*f));
+    fits_file_t *f = calloc(1, sizeof(*f));
     if (!f) return NULL;
-    f->kind = SCIIO_OBJ_FILE;
+    f->kind = FITS_OBJ_FILE;
     f->path = strdup(path);
     if (!f->path) { free(f); return NULL; }
     f->adapter      = adapter;
@@ -56,7 +56,7 @@ static sciio_file_t *sciio_file_new(const char *path, const sciio_adapter_t *ada
     return f;
 }
 
-static void sciio_file_destroy(sciio_file_t *f)
+static void fits_file_destroy(fits_file_t *f)
 {
     if (!f) return;
     if (--f->refcount > 0) return;       /* extra refs (e.g. H5Iget_file_id) */
@@ -65,12 +65,12 @@ static void sciio_file_destroy(sciio_file_t *f)
     free(f);
 }
 
-static sciio_group_t *sciio_group_new(sciio_file_t *file, const char *name,
+static fits_group_t *fits_group_new(fits_file_t *file, const char *name,
                                        adapter_object_t *adapter_obj, bool owns)
 {
-    sciio_group_t *g = calloc(1, sizeof(*g));
+    fits_group_t *g = calloc(1, sizeof(*g));
     if (!g) return NULL;
-    g->kind = SCIIO_OBJ_GROUP;
+    g->kind = FITS_OBJ_GROUP;
     g->file = file;
     g->name = strdup(name);
     if (!g->name) { free(g); return NULL; }
@@ -79,7 +79,7 @@ static sciio_group_t *sciio_group_new(sciio_file_t *file, const char *name,
     return g;
 }
 
-static void sciio_group_destroy(sciio_group_t *g)
+static void fits_group_destroy(fits_group_t *g)
 {
     if (!g) return;
     if (g->owns_adapter_obj && g->adapter_obj) g->file->adapter->object_close(g->adapter_obj);
@@ -90,20 +90,20 @@ static void sciio_group_destroy(sciio_group_t *g)
 /* Attribute handle: owns its name, references the parent group's adapter_obj
  * (borrowed; the parent group must outlive the attribute, which HDF5 enforces
  * via id ref-counting). */
-typedef struct sciio_attr_s {
-    sciio_obj_kind_t  kind;
-    sciio_file_t     *file;
+typedef struct fits_attr_s {
+    fits_obj_kind_t  kind;
+    fits_file_t     *file;
     adapter_object_t *parent_aobj;   /* borrowed */
     char             *name;
     adapter_attr_info_t info;
-} sciio_attr_t;
+} fits_attr_t;
 
-static sciio_attr_t *sciio_attr_new(sciio_file_t *file, adapter_object_t *parent_aobj,
+static fits_attr_t *fits_attr_new(fits_file_t *file, adapter_object_t *parent_aobj,
                                      const char *name, const adapter_attr_info_t *info)
 {
-    sciio_attr_t *a = calloc(1, sizeof(*a));
+    fits_attr_t *a = calloc(1, sizeof(*a));
     if (!a) return NULL;
-    a->kind = SCIIO_OBJ_ATTR;
+    a->kind = FITS_OBJ_ATTR;
     a->file = file;
     a->parent_aobj = parent_aobj;
     a->name = strdup(name);
@@ -112,7 +112,7 @@ static sciio_attr_t *sciio_attr_new(sciio_file_t *file, adapter_object_t *parent
     return a;
 }
 
-static void sciio_attr_destroy(sciio_attr_t *a)
+static void fits_attr_destroy(fits_attr_t *a)
 {
     if (!a) return;
     free(a->name);
@@ -120,23 +120,23 @@ static void sciio_attr_destroy(sciio_attr_t *a)
 }
 
 /* Dataset handle: wraps an adapter dataset, owns it on close. */
-typedef struct sciio_dataset_s {
-    sciio_obj_kind_t  kind;
-    sciio_file_t     *file;
+typedef struct fits_dataset_s {
+    fits_obj_kind_t  kind;
+    fits_file_t     *file;
     adapter_object_t *adapter_obj;   /* owned */
-} sciio_dataset_t;
+} fits_dataset_t;
 
-static sciio_dataset_t *sciio_dataset_new(sciio_file_t *file, adapter_object_t *aobj)
+static fits_dataset_t *fits_dataset_new(fits_file_t *file, adapter_object_t *aobj)
 {
-    sciio_dataset_t *d = calloc(1, sizeof(*d));
+    fits_dataset_t *d = calloc(1, sizeof(*d));
     if (!d) return NULL;
-    d->kind = SCIIO_OBJ_DATASET;
+    d->kind = FITS_OBJ_DATASET;
     d->file = file;
     d->adapter_obj = aobj;
     return d;
 }
 
-static void sciio_dataset_destroy(sciio_dataset_t *d)
+static void fits_dataset_destroy(fits_dataset_t *d)
 {
     if (!d) return;
     if (d->adapter_obj) d->file->adapter->object_close(d->adapter_obj);
@@ -144,14 +144,14 @@ static void sciio_dataset_destroy(sciio_dataset_t *d)
 }
 
 /* Forward declaration */
-static hid_t sciio_dataset_h5type_base(const adapter_type_t *t);
+static hid_t fits_dataset_h5type_base(const adapter_type_t *t);
 
 /* Map an adapter_type_t to a freshly created HDF5 datatype hid_t for dataset
  * use. Caller owns the returned id. Wraps with H5Tarray_create2 (TDIMn /
  * multi-element cells) or H5Tvlen_create (TFORM 'P'/'Q') as needed. */
-static hid_t sciio_dataset_h5type(const adapter_type_t *t)
+static hid_t fits_dataset_h5type(const adapter_type_t *t)
 {
-    hid_t base = sciio_dataset_h5type_base(t);
+    hid_t base = fits_dataset_h5type_base(t);
     if (base < 0) return base;
 
     if (t->is_vlen) {
@@ -168,7 +168,7 @@ static hid_t sciio_dataset_h5type(const adapter_type_t *t)
     return arr;
 }
 
-static hid_t sciio_dataset_h5type_base(const adapter_type_t *t)
+static hid_t fits_dataset_h5type_base(const adapter_type_t *t)
 {
     switch (t->cls) {
         case ADAPTER_T_INT:
@@ -224,7 +224,7 @@ static hid_t sciio_dataset_h5type_base(const adapter_type_t *t)
             hid_t cmpd = H5Tcreate(H5T_COMPOUND, ci->row_size);
             if (cmpd < 0) return H5I_INVALID_HID;
             for (int i = 0; i < ci->n_members; ++i) {
-                hid_t mt = sciio_dataset_h5type(&ci->members[i].type);
+                hid_t mt = fits_dataset_h5type(&ci->members[i].type);
                 if (mt < 0 ||
                     H5Tinsert(cmpd, ci->members[i].name,
                               ci->members[i].offset, mt) < 0) {
@@ -243,7 +243,7 @@ static hid_t sciio_dataset_h5type_base(const adapter_type_t *t)
 
 /* Map an adapter_type_class_t to a freshly created HDF5 datatype hid_t.
  * The caller owns the returned id and must H5Tclose it. */
-static hid_t sciio_attr_h5type(const adapter_type_t *t)
+static hid_t fits_attr_h5type(const adapter_type_t *t)
 {
     switch (t->cls) {
         case ADAPTER_T_INT:    return H5Tcopy(H5T_NATIVE_INT64);
@@ -271,7 +271,7 @@ static hid_t sciio_attr_h5type(const adapter_type_t *t)
     }
 }
 
-static hid_t sciio_attr_h5space(const adapter_space_t *s)
+static hid_t fits_attr_h5space(const adapter_space_t *s)
 {
     if (s->rank == 0) return H5Screate(H5S_SCALAR);
     hsize_t dims[8];
@@ -283,19 +283,19 @@ static hid_t sciio_attr_h5space(const adapter_space_t *s)
 /* Error helper                                                       */
 /* ------------------------------------------------------------------ */
 
-#define SCIIO_UNSUPPORTED(_what)                                                \
+#define FITS_UNSUPPORTED(_what)                                                \
     do {                                                                        \
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,                     \
                  H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,                         \
-                 "sciio-vol: %s not implemented yet", (_what));                 \
+                 "fits-hdf5-vol: %s not implemented yet", (_what));                 \
         return -1;                                                              \
     } while (0)
 
-#define SCIIO_UNSUPPORTED_PTR(_what)                                            \
+#define FITS_UNSUPPORTED_PTR(_what)                                            \
     do {                                                                        \
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,                     \
                  H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,                         \
-                 "sciio-vol: %s not implemented yet", (_what));                 \
+                 "fits-hdf5-vol: %s not implemented yet", (_what));                 \
         return NULL;                                                            \
     } while (0)
 
@@ -303,28 +303,28 @@ static hid_t sciio_attr_h5space(const adapter_space_t *s)
 /* Lifecycle                                                          */
 /* ------------------------------------------------------------------ */
 
-static herr_t sciio_init(hid_t vipl_id) { (void)vipl_id; return 0; }
-static herr_t sciio_term(void)          { return 0; }
+static herr_t fits_init(hid_t vipl_id) { (void)vipl_id; return 0; }
+static herr_t fits_term(void)          { return 0; }
 
 /* ------------------------------------------------------------------ */
 /* Info class — connector takes no info, but the slots must be valid  */
 /* ------------------------------------------------------------------ */
 
-static void  *sciio_info_copy(const void *info)                  { (void)info; return NULL; }
-static herr_t sciio_info_cmp(int *cmp, const void *a, const void *b) { (void)a; (void)b; *cmp = 0; return 0; }
-static herr_t sciio_info_free(void *info)                        { (void)info; return 0; }
-static herr_t sciio_info_to_str(const void *info, char **str)    { (void)info; *str = NULL; return 0; }
-static herr_t sciio_str_to_info(const char *str, void **info)    { (void)str; *info = NULL; return 0; }
+static void  *fits_info_copy(const void *info)                  { (void)info; return NULL; }
+static herr_t fits_info_cmp(int *cmp, const void *a, const void *b) { (void)a; (void)b; *cmp = 0; return 0; }
+static herr_t fits_info_free(void *info)                        { (void)info; return 0; }
+static herr_t fits_info_to_str(const void *info, char **str)    { (void)info; *str = NULL; return 0; }
+static herr_t fits_str_to_info(const char *str, void **info)    { (void)str; *info = NULL; return 0; }
 
 /* ------------------------------------------------------------------ */
 /* Wrap class — terminal connector exposes its own objects, no wrap   */
 /* ------------------------------------------------------------------ */
 
-static void  *sciio_get_object(const void *obj)                       { return (void *)obj; }
-static herr_t sciio_get_wrap_ctx(const void *obj, void **wrap_ctx)    { (void)obj; *wrap_ctx = NULL; return 0; }
-static void  *sciio_wrap_object(void *obj, H5I_type_t t, void *ctx)   { (void)t; (void)ctx; return obj; }
-static void  *sciio_unwrap_object(void *obj)                          { return obj; }
-static herr_t sciio_free_wrap_ctx(void *ctx)                          { (void)ctx; return 0; }
+static void  *fits_get_object(const void *obj)                       { return (void *)obj; }
+static herr_t fits_get_wrap_ctx(const void *obj, void **wrap_ctx)    { (void)obj; *wrap_ctx = NULL; return 0; }
+static void  *fits_wrap_object(void *obj, H5I_type_t t, void *ctx)   { (void)t; (void)ctx; return obj; }
+static void  *fits_unwrap_object(void *obj)                          { return obj; }
+static herr_t fits_free_wrap_ctx(void *ctx)                          { (void)ctx; return 0; }
 
 /* ------------------------------------------------------------------ */
 /* All operational callbacks — stubs returning H5E_UNSUPPORTED.        */
@@ -332,23 +332,23 @@ static herr_t sciio_free_wrap_ctx(void *ctx)                          { (void)ct
 /* ------------------------------------------------------------------ */
 
 /* Forward declaration — defined later in the file. */
-static adapter_object_t *sciio_resolve(void *obj, const H5VL_loc_params_t *loc_params,
-                                       sciio_file_t **out_file, bool *owns);
+static adapter_object_t *fits_resolve(void *obj, const H5VL_loc_params_t *loc_params,
+                                       fits_file_t **out_file, bool *owns);
 
 /* attribute */
-static void  *sciio_attr_create(void *o, const H5VL_loc_params_t *l, const char *n, hid_t t, hid_t s, hid_t a, hid_t x, hid_t d, void **r)
-{ (void)o;(void)l;(void)n;(void)t;(void)s;(void)a;(void)x;(void)d;(void)r; SCIIO_UNSUPPORTED_PTR("attr_create"); }
-static void *sciio_attr_open(void *obj, const H5VL_loc_params_t *loc_params,
+static void  *fits_attr_create(void *o, const H5VL_loc_params_t *l, const char *n, hid_t t, hid_t s, hid_t a, hid_t x, hid_t d, void **r)
+{ (void)o;(void)l;(void)n;(void)t;(void)s;(void)a;(void)x;(void)d;(void)r; FITS_UNSUPPORTED_PTR("attr_create"); }
+static void *fits_attr_open(void *obj, const H5VL_loc_params_t *loc_params,
                               const char *name, hid_t aapl_id, hid_t dxpl_id, void **req)
 {
     (void)aapl_id; (void)dxpl_id; (void)req;
-    sciio_file_t *file;
+    fits_file_t *file;
     bool owns;
-    adapter_object_t *parent = sciio_resolve(obj, loc_params, &file, &owns);
+    adapter_object_t *parent = fits_resolve(obj, loc_params, &file, &owns);
     if (!parent) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_SYM, H5E_NOTFOUND,
-                 "sciio-vol: attr_open parent not found");
+                 "fits-hdf5-vol: attr_open parent not found");
         return NULL;
     }
 
@@ -365,14 +365,14 @@ static void *sciio_attr_open(void *obj, const H5VL_loc_params_t *loc_params,
         if (owns) file->adapter->object_close(parent);
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_ATTR, H5E_NOTFOUND,
-                 "sciio-vol: attribute \"%s\" not found", name);
+                 "fits-hdf5-vol: attribute \"%s\" not found", name);
         return NULL;
     }
 
-    /* sciio_resolve gave us a borrow-or-owned. The attr handle borrows the
+    /* fits_resolve gave us a borrow-or-owned. The attr handle borrows the
      * parent_aobj — for an owned (heap) parent, we keep ownership inside the
      * attribute and free it on close; for a borrowed root, we don't. */
-    sciio_attr_t *a = sciio_attr_new(file, parent, name, &info);
+    fits_attr_t *a = fits_attr_new(file, parent, name, &info);
     if (!a) {
         if (owns) file->adapter->object_close(parent);
         return NULL;
@@ -390,27 +390,27 @@ static void *sciio_attr_open(void *obj, const H5VL_loc_params_t *loc_params,
     return a;
 }
 
-static herr_t sciio_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req)
+static herr_t fits_attr_read(void *attr, hid_t mem_type_id, void *buf, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req; (void)mem_type_id;
-    sciio_attr_t *a = (sciio_attr_t *)attr;
-    assert(a && a->kind == SCIIO_OBJ_ATTR);
+    fits_attr_t *a = (fits_attr_t *)attr;
+    assert(a && a->kind == FITS_OBJ_ATTR);
     return a->file->adapter->attr_read_by_name(a->parent_aobj, a->name, buf);
 }
-static herr_t sciio_attr_write(void *a, hid_t t, const void *b, hid_t d, void **r)
-{ (void)a;(void)t;(void)b;(void)d;(void)r; SCIIO_UNSUPPORTED("attr_write"); }
-static herr_t sciio_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req)
+static herr_t fits_attr_write(void *a, hid_t t, const void *b, hid_t d, void **r)
+{ (void)a;(void)t;(void)b;(void)d;(void)r; FITS_UNSUPPORTED("attr_write"); }
+static herr_t fits_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_attr_t *a = (sciio_attr_t *)obj;
-    assert(a && a->kind == SCIIO_OBJ_ATTR);
+    fits_attr_t *a = (fits_attr_t *)obj;
+    assert(a && a->kind == FITS_OBJ_ATTR);
 
     switch (args->op_type) {
         case H5VL_ATTR_GET_TYPE:
-            args->args.get_type.type_id = sciio_attr_h5type(&a->info.type);
+            args->args.get_type.type_id = fits_attr_h5type(&a->info.type);
             return args->args.get_type.type_id < 0 ? -1 : 0;
         case H5VL_ATTR_GET_SPACE:
-            args->args.get_space.space_id = sciio_attr_h5space(&a->info.space);
+            args->args.get_space.space_id = fits_attr_h5space(&a->info.space);
             return args->args.get_space.space_id < 0 ? -1 : 0;
         case H5VL_ATTR_GET_NAME: {
             size_t need = strlen(a->name);
@@ -434,7 +434,7 @@ static herr_t sciio_attr_get(void *obj, H5VL_attr_get_args_t *args, hid_t dxpl_i
             return 0;
         }
         default:
-            SCIIO_UNSUPPORTED("attr_get (this op_type)");
+            FITS_UNSUPPORTED("attr_get (this op_type)");
     }
 }
 
@@ -444,15 +444,15 @@ typedef struct {
     H5VL_attr_iterate_args_t   *args;
     herr_t                      user_rc;
     hsize_t                     idx;
-} sciio_attr_iter_ctx_t;
+} fits_attr_iter_ctx_t;
 
-static herr_t sciio_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
+static herr_t fits_attr_specific(void *obj, const H5VL_loc_params_t *loc_params,
                                    H5VL_attr_specific_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_file_t *file;
+    fits_file_t *file;
     bool owns;
-    adapter_object_t *target = sciio_resolve(obj, loc_params, &file, &owns);
+    adapter_object_t *target = fits_resolve(obj, loc_params, &file, &owns);
     if (!target) return -1;
 
     herr_t rc = 0;
@@ -483,10 +483,10 @@ static herr_t sciio_attr_specific(void *obj, const H5VL_loc_params_t *loc_params
                 /* For attribute iteration the parent is the *current obj*; we
                  * just pass back what HDF5 gave us as a hid_t. We don't have
                  * a clean way to obtain that, so we forge a wrap. */
-                sciio_group_t *wrap = sciio_group_new(file, "/", target, /*owns=*/false);
+                fits_group_t *wrap = fits_group_new(file, "/", target, /*owns=*/false);
                 if (!wrap) { rc = -1; break; }
                 hid_t pid = H5VLwrap_register(wrap, H5I_GROUP);
-                if (pid < 0) { sciio_group_destroy(wrap); rc = -1; break; }
+                if (pid < 0) { fits_group_destroy(wrap); rc = -1; break; }
                 herr_t op_rc = args->args.iterate.op(pid, info.name, &ai, args->args.iterate.op_data);
                 H5Idec_ref(pid);
                 ++idx;
@@ -500,35 +500,35 @@ static herr_t sciio_attr_specific(void *obj, const H5VL_loc_params_t *loc_params
             rc = -1;
             H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                      H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,
-                     "sciio-vol: attr_specific op_type %d not implemented", (int)args->op_type);
+                     "fits-hdf5-vol: attr_specific op_type %d not implemented", (int)args->op_type);
     }
 
     if (owns) file->adapter->object_close(target);
     return rc;
 }
-static herr_t sciio_attr_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("attr_optional"); }
-static herr_t sciio_attr_close(void *attr, hid_t dxpl_id, void **req)
+static herr_t fits_attr_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("attr_optional"); }
+static herr_t fits_attr_close(void *attr, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_attr_t *a = (sciio_attr_t *)attr;
-    assert(a && a->kind == SCIIO_OBJ_ATTR);
-    sciio_attr_destroy(a);
+    fits_attr_t *a = (fits_attr_t *)attr;
+    assert(a && a->kind == FITS_OBJ_ATTR);
+    fits_attr_destroy(a);
     return 0;
 }
 
 /* dataset */
-static void  *sciio_dataset_create(void *o, const H5VL_loc_params_t *l, const char *n, hid_t lc, hid_t t, hid_t s, hid_t dc, hid_t da, hid_t d, void **r)
-{ (void)o;(void)l;(void)n;(void)lc;(void)t;(void)s;(void)dc;(void)da;(void)d;(void)r; SCIIO_UNSUPPORTED_PTR("dataset_create"); }
-static void *sciio_dataset_open(void *obj, const H5VL_loc_params_t *loc_params,
+static void  *fits_dataset_create(void *o, const H5VL_loc_params_t *l, const char *n, hid_t lc, hid_t t, hid_t s, hid_t dc, hid_t da, hid_t d, void **r)
+{ (void)o;(void)l;(void)n;(void)lc;(void)t;(void)s;(void)dc;(void)da;(void)d;(void)r; FITS_UNSUPPORTED_PTR("dataset_create"); }
+static void *fits_dataset_open(void *obj, const H5VL_loc_params_t *loc_params,
                                  const char *name, hid_t dapl_id, hid_t dxpl_id, void **req)
 {
     (void)dapl_id; (void)dxpl_id; (void)req;
-    sciio_obj_kind_t k = *(sciio_obj_kind_t *)obj;
-    sciio_file_t *file = (k == SCIIO_OBJ_FILE) ? (sciio_file_t *)obj
-                                               : ((sciio_group_t *)obj)->file;
+    fits_obj_kind_t k = *(fits_obj_kind_t *)obj;
+    fits_file_t *file = (k == FITS_OBJ_FILE) ? (fits_file_t *)obj
+                                               : ((fits_group_t *)obj)->file;
     /* The parent must be a group (or file = root). */
-    adapter_object_t *parent = (k == SCIIO_OBJ_GROUP) ? ((sciio_group_t *)obj)->adapter_obj
+    adapter_object_t *parent = (k == FITS_OBJ_GROUP) ? ((fits_group_t *)obj)->adapter_obj
                                                       : file->adapter->root(file->adapter_file);
 
     /* Resolve name: may be a leaf ("data") or a path ("/HDU0/data"). For the
@@ -537,7 +537,7 @@ static void *sciio_dataset_open(void *obj, const H5VL_loc_params_t *loc_params,
     if (!name) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_DATASET, H5E_NOTFOUND,
-                 "sciio-vol: dataset_open requires a name");
+                 "fits-hdf5-vol: dataset_open requires a name");
         return NULL;
     }
 
@@ -564,23 +564,23 @@ static void *sciio_dataset_open(void *obj, const H5VL_loc_params_t *loc_params,
         if (cur && cur_owns) file->adapter->object_close(cur);
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_DATASET, H5E_NOTFOUND,
-                 "sciio-vol: dataset \"%s\" not found", name);
+                 "fits-hdf5-vol: dataset \"%s\" not found", name);
         return NULL;
     }
 
-    sciio_dataset_t *d = sciio_dataset_new(file, cur);
+    fits_dataset_t *d = fits_dataset_new(file, cur);
     if (!d) { file->adapter->object_close(cur); return NULL; }
     return d;
 }
-static herr_t sciio_dataset_read(size_t count, void *dsets[], hid_t mem_type_id[],
+static herr_t fits_dataset_read(size_t count, void *dsets[], hid_t mem_type_id[],
                                   hid_t mem_space_id[], hid_t file_space_id[],
                                   hid_t dxpl_id, void *bufs[], void **req)
 {
     (void)mem_space_id; (void)dxpl_id; (void)req;
 
     for (size_t i = 0; i < count; ++i) {
-        sciio_dataset_t *d = (sciio_dataset_t *)dsets[i];
-        assert(d && d->kind == SCIIO_OBJ_DATASET);
+        fits_dataset_t *d = (fits_dataset_t *)dsets[i];
+        assert(d && d->kind == FITS_OBJ_DATASET);
 
         adapter_space_t sp = {0};
         if (d->file->adapter->dataset_space(d->adapter_obj, &sp) != 0) return -1;
@@ -588,13 +588,13 @@ static herr_t sciio_dataset_read(size_t count, void *dsets[], hid_t mem_type_id[
         /* No type conversion in flight — caller must request our type. */
         adapter_type_t at = {0};
         if (d->file->adapter->dataset_type(d->adapter_obj, &at) != 0) return -1;
-        hid_t our_type = sciio_dataset_h5type(&at);
+        hid_t our_type = fits_dataset_h5type(&at);
         if (our_type < 0) return -1;
         if (H5Tequal(our_type, mem_type_id[i]) <= 0) {
             H5Tclose(our_type);
             H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                      H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,
-                     "sciio-vol: dataset_read in-flight type conversion not supported "
+                     "fits-hdf5-vol: dataset_read in-flight type conversion not supported "
                      "(open the dataset's native type via H5Dget_type)");
             return -1;
         }
@@ -612,7 +612,7 @@ static herr_t sciio_dataset_read(size_t count, void *dsets[], hid_t mem_type_id[
                 if (H5Sis_regular_hyperslab(file_space_id[i]) <= 0) {
                     H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                              H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,
-                             "sciio-vol: non-regular hyperslab not supported");
+                             "fits-hdf5-vol: non-regular hyperslab not supported");
                     return -1;
                 }
                 hsize_t hstart[8], hstride[8], hcount[8], hblock[8];
@@ -623,7 +623,7 @@ static herr_t sciio_dataset_read(size_t count, void *dsets[], hid_t mem_type_id[
                     if (hblock[k] != 1) {
                         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                                  H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,
-                                 "sciio-vol: hyperslab block>1 not supported "
+                                 "fits-hdf5-vol: hyperslab block>1 not supported "
                                  "(use stride+count instead, axis=%d block=%llu)",
                                  k, (unsigned long long)hblock[k]);
                         return -1;
@@ -662,7 +662,7 @@ static herr_t sciio_dataset_read(size_t count, void *dsets[], hid_t mem_type_id[
             } else {
                 H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                          H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,
-                         "sciio-vol: unsupported file selection type %d", (int)stype);
+                         "fits-hdf5-vol: unsupported file selection type %d", (int)stype);
                 return -1;
             }
         }
@@ -677,13 +677,13 @@ static herr_t sciio_dataset_read(size_t count, void *dsets[], hid_t mem_type_id[
     }
     return 0;
 }
-static herr_t sciio_dataset_write(size_t c, void *ds[], hid_t mt[], hid_t ms[], hid_t fs[], hid_t d, const void *bufs[], void **r)
-{ (void)c;(void)ds;(void)mt;(void)ms;(void)fs;(void)d;(void)bufs;(void)r; SCIIO_UNSUPPORTED("dataset_write"); }
-static herr_t sciio_dataset_get(void *obj, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req)
+static herr_t fits_dataset_write(size_t c, void *ds[], hid_t mt[], hid_t ms[], hid_t fs[], hid_t d, const void *bufs[], void **r)
+{ (void)c;(void)ds;(void)mt;(void)ms;(void)fs;(void)d;(void)bufs;(void)r; FITS_UNSUPPORTED("dataset_write"); }
+static herr_t fits_dataset_get(void *obj, H5VL_dataset_get_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_dataset_t *d = (sciio_dataset_t *)obj;
-    assert(d && d->kind == SCIIO_OBJ_DATASET);
+    fits_dataset_t *d = (fits_dataset_t *)obj;
+    assert(d && d->kind == FITS_OBJ_DATASET);
 
     switch (args->op_type) {
         case H5VL_DATASET_GET_SPACE: {
@@ -697,7 +697,7 @@ static herr_t sciio_dataset_get(void *obj, H5VL_dataset_get_args_t *args, hid_t 
         case H5VL_DATASET_GET_TYPE: {
             adapter_type_t t = {0};
             if (d->file->adapter->dataset_type(d->adapter_obj, &t) != 0) return -1;
-            args->args.get_type.type_id = sciio_dataset_h5type(&t);
+            args->args.get_type.type_id = fits_dataset_h5type(&t);
             return args->args.get_type.type_id < 0 ? -1 : 0;
         }
         case H5VL_DATASET_GET_STORAGE_SIZE: {
@@ -720,40 +720,40 @@ static herr_t sciio_dataset_get(void *obj, H5VL_dataset_get_args_t *args, hid_t 
             *args->args.get_space_status.status = H5D_SPACE_STATUS_ALLOCATED;
             return 0;
         default:
-            SCIIO_UNSUPPORTED("dataset_get (this op_type)");
+            FITS_UNSUPPORTED("dataset_get (this op_type)");
     }
 }
-static herr_t sciio_dataset_specific(void *o, H5VL_dataset_specific_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("dataset_specific"); }
-static herr_t sciio_dataset_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("dataset_optional"); }
-static herr_t sciio_dataset_close(void *obj, hid_t dxpl_id, void **req)
+static herr_t fits_dataset_specific(void *o, H5VL_dataset_specific_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("dataset_specific"); }
+static herr_t fits_dataset_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("dataset_optional"); }
+static herr_t fits_dataset_close(void *obj, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_dataset_t *d = (sciio_dataset_t *)obj;
-    assert(d && d->kind == SCIIO_OBJ_DATASET);
-    sciio_dataset_destroy(d);
+    fits_dataset_t *d = (fits_dataset_t *)obj;
+    assert(d && d->kind == FITS_OBJ_DATASET);
+    fits_dataset_destroy(d);
     return 0;
 }
 
 /* datatype */
-static void  *sciio_datatype_commit(void *o, const H5VL_loc_params_t *l, const char *n, hid_t t, hid_t lc, hid_t tc, hid_t ta, hid_t d, void **r)
-{ (void)o;(void)l;(void)n;(void)t;(void)lc;(void)tc;(void)ta;(void)d;(void)r; SCIIO_UNSUPPORTED_PTR("datatype_commit"); }
-static void  *sciio_datatype_open(void *o, const H5VL_loc_params_t *l, const char *n, hid_t ta, hid_t d, void **r)
-{ (void)o;(void)l;(void)n;(void)ta;(void)d;(void)r; SCIIO_UNSUPPORTED_PTR("datatype_open"); }
-static herr_t sciio_datatype_get(void *t, H5VL_datatype_get_args_t *a, hid_t d, void **r)
-{ (void)t;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("datatype_get"); }
-static herr_t sciio_datatype_specific(void *o, H5VL_datatype_specific_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("datatype_specific"); }
-static herr_t sciio_datatype_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("datatype_optional"); }
-static herr_t sciio_datatype_close(void *t, hid_t d, void **r)
-{ (void)t;(void)d;(void)r; SCIIO_UNSUPPORTED("datatype_close"); }
+static void  *fits_datatype_commit(void *o, const H5VL_loc_params_t *l, const char *n, hid_t t, hid_t lc, hid_t tc, hid_t ta, hid_t d, void **r)
+{ (void)o;(void)l;(void)n;(void)t;(void)lc;(void)tc;(void)ta;(void)d;(void)r; FITS_UNSUPPORTED_PTR("datatype_commit"); }
+static void  *fits_datatype_open(void *o, const H5VL_loc_params_t *l, const char *n, hid_t ta, hid_t d, void **r)
+{ (void)o;(void)l;(void)n;(void)ta;(void)d;(void)r; FITS_UNSUPPORTED_PTR("datatype_open"); }
+static herr_t fits_datatype_get(void *t, H5VL_datatype_get_args_t *a, hid_t d, void **r)
+{ (void)t;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("datatype_get"); }
+static herr_t fits_datatype_specific(void *o, H5VL_datatype_specific_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("datatype_specific"); }
+static herr_t fits_datatype_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("datatype_optional"); }
+static herr_t fits_datatype_close(void *t, hid_t d, void **r)
+{ (void)t;(void)d;(void)r; FITS_UNSUPPORTED("datatype_close"); }
 
 /* file */
-static void  *sciio_file_create(const char *n, unsigned f, hid_t fc, hid_t fa, hid_t d, void **r)
-{ (void)n;(void)f;(void)fc;(void)fa;(void)d;(void)r; SCIIO_UNSUPPORTED_PTR("file_create (read-only connector)"); }
-static void *sciio_file_open(const char *name, unsigned flags, hid_t fapl_id, hid_t dxpl_id, void **req)
+static void  *fits_file_create(const char *n, unsigned f, hid_t fc, hid_t fa, hid_t d, void **r)
+{ (void)n;(void)f;(void)fc;(void)fa;(void)d;(void)r; FITS_UNSUPPORTED_PTR("file_create (read-only connector)"); }
+static void *fits_file_open(const char *name, unsigned flags, hid_t fapl_id, hid_t dxpl_id, void **req)
 {
     (void)fapl_id; (void)dxpl_id; (void)req;
 
@@ -761,18 +761,18 @@ static void *sciio_file_open(const char *name, unsigned flags, hid_t fapl_id, hi
     if (flags & H5F_ACC_RDWR) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,
-                 "sciio-vol: write access not supported in v1 (file=%s)", name);
+                 "fits-hdf5-vol: write access not supported in v1 (file=%s)", name);
         return NULL;
     }
 
     /* Pick the adapter via the registry (M5 vtable dispatch). v1 has only
      * one adapter (FITS) but the lookup is the same shape multi-adapter
      * dispatch will use. */
-    const sciio_adapter_t *adapter = sciio_dispatch_probe(name);
+    const fits_adapter_t *adapter = fits_dispatch_probe(name);
     if (!adapter) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_FILE, H5E_CANTOPENFILE,
-                 "sciio-vol: %s does not match a supported format", name);
+                 "fits-hdf5-vol: %s does not match a supported format", name);
         return NULL;
     }
 
@@ -780,25 +780,25 @@ static void *sciio_file_open(const char *name, unsigned flags, hid_t fapl_id, hi
     if (!af) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_FILE, H5E_CANTOPENFILE,
-                 "sciio-vol: adapter '%s' failed to open %s", adapter->name, name);
+                 "fits-hdf5-vol: adapter '%s' failed to open %s", adapter->name, name);
         return NULL;
     }
 
-    sciio_file_t *f = sciio_file_new(name, adapter, af);
+    fits_file_t *f = fits_file_new(name, adapter, af);
     if (!f) {
         adapter->close(af);
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_RESOURCE, H5E_NOSPACE,
-                 "sciio-vol: out of memory opening %s", name);
+                 "fits-hdf5-vol: out of memory opening %s", name);
         return NULL;
     }
     return f;
 }
-static herr_t sciio_file_get(void *obj, H5VL_file_get_args_t *args, hid_t dxpl_id, void **req)
+static herr_t fits_file_get(void *obj, H5VL_file_get_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_file_t *f = (sciio_file_t *)obj;
-    assert(f && f->kind == SCIIO_OBJ_FILE);
+    fits_file_t *f = (fits_file_t *)obj;
+    assert(f && f->kind == FITS_OBJ_FILE);
 
     switch (args->op_type) {
         case H5VL_FILE_GET_NAME: {
@@ -842,85 +842,85 @@ static herr_t sciio_file_get(void *obj, H5VL_file_get_args_t *args, hid_t dxpl_i
             return args->args.get_fapl.fapl_id < 0 ? -1 : 0;
         }
         default:
-            SCIIO_UNSUPPORTED("file_get (this op_type)");
+            FITS_UNSUPPORTED("file_get (this op_type)");
     }
 }
-static herr_t sciio_file_specific(void *f, H5VL_file_specific_args_t *a, hid_t d, void **r)
-{ (void)f;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("file_specific"); }
-static herr_t sciio_file_optional(void *f, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)f;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("file_optional"); }
-static herr_t sciio_file_close(void *obj, hid_t dxpl_id, void **req)
+static herr_t fits_file_specific(void *f, H5VL_file_specific_args_t *a, hid_t d, void **r)
+{ (void)f;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("file_specific"); }
+static herr_t fits_file_optional(void *f, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)f;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("file_optional"); }
+static herr_t fits_file_close(void *obj, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_file_t *f = (sciio_file_t *)obj;
-    assert(f && f->kind == SCIIO_OBJ_FILE);
-    sciio_file_destroy(f);
+    fits_file_t *f = (fits_file_t *)obj;
+    assert(f && f->kind == FITS_OBJ_FILE);
+    fits_file_destroy(f);
     return 0;
 }
 
 /* group */
-static void  *sciio_group_create(void *o, const H5VL_loc_params_t *l, const char *n, hid_t lc, hid_t gc, hid_t ga, hid_t d, void **r)
-{ (void)o;(void)l;(void)n;(void)lc;(void)gc;(void)ga;(void)d;(void)r; SCIIO_UNSUPPORTED_PTR("group_create"); }
-static void *sciio_group_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
+static void  *fits_group_create(void *o, const H5VL_loc_params_t *l, const char *n, hid_t lc, hid_t gc, hid_t ga, hid_t d, void **r)
+{ (void)o;(void)l;(void)n;(void)lc;(void)gc;(void)ga;(void)d;(void)r; FITS_UNSUPPORTED_PTR("group_create"); }
+static void *fits_group_open(void *obj, const H5VL_loc_params_t *loc_params, const char *name,
                                hid_t gapl_id, hid_t dxpl_id, void **req)
 {
     (void)loc_params; (void)gapl_id; (void)dxpl_id; (void)req;
 
-    sciio_obj_kind_t parent_kind = *(sciio_obj_kind_t *)obj;
+    fits_obj_kind_t parent_kind = *(fits_obj_kind_t *)obj;
 
-    sciio_file_t *file = (parent_kind == SCIIO_OBJ_FILE)
-                            ? (sciio_file_t *)obj
-                            : ((sciio_group_t *)obj)->file;
+    fits_file_t *file = (parent_kind == FITS_OBJ_FILE)
+                            ? (fits_file_t *)obj
+                            : ((fits_group_t *)obj)->file;
 
-    /* Walk via sciio_resolve to handle multi-component paths consistently
+    /* Walk via fits_resolve to handle multi-component paths consistently
      * with object_open / link_specific. */
     H5VL_loc_params_t lp = { .type = H5VL_OBJECT_BY_NAME };
     lp.loc_data.loc_by_name.name = (name && *name) ? name : "/";
     lp.loc_data.loc_by_name.lapl_id = H5P_DEFAULT;
 
-    sciio_file_t *resolved_file;
+    fits_file_t *resolved_file;
     bool resolved_owns;
-    adapter_object_t *resolved = sciio_resolve(obj, &lp, &resolved_file, &resolved_owns);
+    adapter_object_t *resolved = fits_resolve(obj, &lp, &resolved_file, &resolved_owns);
     if (!resolved || file->adapter->object_kind(resolved) != ADAPTER_KIND_GROUP) {
         if (resolved && resolved_owns) file->adapter->object_close(resolved);
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_SYM, H5E_NOTFOUND,
-                 "sciio-vol: group \"%s\" not found",
+                 "fits-hdf5-vol: group \"%s\" not found",
                  name ? name : "(null)");
         return NULL;
     }
-    sciio_group_t *g = sciio_group_new(file, name ? name : "/", resolved, resolved_owns);
+    fits_group_t *g = fits_group_new(file, name ? name : "/", resolved, resolved_owns);
     if (!g && resolved_owns) file->adapter->object_close(resolved);
     if (!g) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_RESOURCE, H5E_NOSPACE,
-                 "sciio-vol: out of memory opening root group");
+                 "fits-hdf5-vol: out of memory opening root group");
         return NULL;
     }
     return g;
 }
 /* Helper: count immediate children of a group. */
-static int sciio_count_cb(const char *n, void *u) { (void)n; ++*(size_t *)u; return 0; }
+static int fits_count_cb(const char *n, void *u) { (void)n; ++*(size_t *)u; return 0; }
 
-static size_t sciio_group_nlinks(sciio_group_t *g)
+static size_t fits_group_nlinks(fits_group_t *g)
 {
     size_t n = 0;
-    g->file->adapter->group_iterate(g->adapter_obj, sciio_count_cb, &n);
+    g->file->adapter->group_iterate(g->adapter_obj, fits_count_cb, &n);
     return n;
 }
 
-static herr_t sciio_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl_id, void **req)
+static herr_t fits_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_obj_kind_t k = *(sciio_obj_kind_t *)obj;
-    sciio_group_t *g = NULL;
-    if (k == SCIIO_OBJ_GROUP) g = (sciio_group_t *)obj;
+    fits_obj_kind_t k = *(fits_obj_kind_t *)obj;
+    fits_group_t *g = NULL;
+    if (k == FITS_OBJ_GROUP) g = (fits_group_t *)obj;
     else {
         /* GET_INFO on a file id targets the root group. */
-        sciio_file_t *f = (sciio_file_t *)obj;
+        fits_file_t *f = (fits_file_t *)obj;
         adapter_object_t *aroot = f->adapter->root(f->adapter_file);
-        static sciio_group_t fake_root;
-        fake_root.kind = SCIIO_OBJ_GROUP;
+        static fits_group_t fake_root;
+        fake_root.kind = FITS_OBJ_GROUP;
         fake_root.file = f;
         fake_root.name = (char *)"/";
         fake_root.adapter_obj = aroot;
@@ -931,7 +931,7 @@ static herr_t sciio_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl
         case H5VL_GROUP_GET_INFO: {
             H5G_info_t *gi = args->args.get_info.ginfo;
             gi->storage_type = H5G_STORAGE_TYPE_UNKNOWN;
-            gi->nlinks       = (hsize_t)sciio_group_nlinks(g);
+            gi->nlinks       = (hsize_t)fits_group_nlinks(g);
             gi->max_corder   = 0;
             gi->mounted      = false;
             return 0;
@@ -948,33 +948,33 @@ static herr_t sciio_group_get(void *obj, H5VL_group_get_args_t *args, hid_t dxpl
             return 0;
         }
         default:
-            SCIIO_UNSUPPORTED("group_get (this op_type)");
+            FITS_UNSUPPORTED("group_get (this op_type)");
     }
 }
-static herr_t sciio_group_specific(void *o, H5VL_group_specific_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("group_specific"); }
-static herr_t sciio_group_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("group_optional"); }
-static herr_t sciio_group_close(void *obj, hid_t dxpl_id, void **req)
+static herr_t fits_group_specific(void *o, H5VL_group_specific_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("group_specific"); }
+static herr_t fits_group_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("group_optional"); }
+static herr_t fits_group_close(void *obj, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_group_t *g = (sciio_group_t *)obj;
-    assert(g && g->kind == SCIIO_OBJ_GROUP);
-    sciio_group_destroy(g);
+    fits_group_t *g = (fits_group_t *)obj;
+    assert(g && g->kind == FITS_OBJ_GROUP);
+    fits_group_destroy(g);
     return 0;
 }
 
 /* link */
-static herr_t sciio_link_create(H5VL_link_create_args_t *a, void *o, const H5VL_loc_params_t *l, hid_t lc, hid_t la, hid_t d, void **r)
-{ (void)a;(void)o;(void)l;(void)lc;(void)la;(void)d;(void)r; SCIIO_UNSUPPORTED("link_create"); }
-static herr_t sciio_link_copy(void *so, const H5VL_loc_params_t *sl, void *_do, const H5VL_loc_params_t *dl, hid_t lc, hid_t la, hid_t d, void **r)
-{ (void)so;(void)sl;(void)_do;(void)dl;(void)lc;(void)la;(void)d;(void)r; SCIIO_UNSUPPORTED("link_copy"); }
-static herr_t sciio_link_move(void *so, const H5VL_loc_params_t *sl, void *_do, const H5VL_loc_params_t *dl, hid_t lc, hid_t la, hid_t d, void **r)
-{ (void)so;(void)sl;(void)_do;(void)dl;(void)lc;(void)la;(void)d;(void)r; SCIIO_UNSUPPORTED("link_move"); }
+static herr_t fits_link_create(H5VL_link_create_args_t *a, void *o, const H5VL_loc_params_t *l, hid_t lc, hid_t la, hid_t d, void **r)
+{ (void)a;(void)o;(void)l;(void)lc;(void)la;(void)d;(void)r; FITS_UNSUPPORTED("link_create"); }
+static herr_t fits_link_copy(void *so, const H5VL_loc_params_t *sl, void *_do, const H5VL_loc_params_t *dl, hid_t lc, hid_t la, hid_t d, void **r)
+{ (void)so;(void)sl;(void)_do;(void)dl;(void)lc;(void)la;(void)d;(void)r; FITS_UNSUPPORTED("link_copy"); }
+static herr_t fits_link_move(void *so, const H5VL_loc_params_t *sl, void *_do, const H5VL_loc_params_t *dl, hid_t lc, hid_t la, hid_t d, void **r)
+{ (void)so;(void)sl;(void)_do;(void)dl;(void)lc;(void)la;(void)d;(void)r; FITS_UNSUPPORTED("link_move"); }
 /* Build an H5L_info2_t for a hard link emanating from the given group. We have
  * no real object tokens in M2 (no chunking, no addresses), so we synthesize
  * a zero token — h5ls and friends only inspect the type. */
-static void sciio_fill_linfo(H5L_info2_t *linfo)
+static void fits_fill_linfo(H5L_info2_t *linfo)
 {
     linfo->type = H5L_TYPE_HARD;
     linfo->corder_valid = false;
@@ -983,17 +983,17 @@ static void sciio_fill_linfo(H5L_info2_t *linfo)
     memset(&linfo->u.token, 0, sizeof(linfo->u.token));
 }
 
-static herr_t sciio_link_get(void *obj, const H5VL_loc_params_t *loc_params,
+static herr_t fits_link_get(void *obj, const H5VL_loc_params_t *loc_params,
                               H5VL_link_get_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
 
     /* Resolve the parent group and the link name from loc_params. */
-    sciio_obj_kind_t k = *(sciio_obj_kind_t *)obj;
-    sciio_file_t *file = (k == SCIIO_OBJ_FILE) ? (sciio_file_t *)obj
-                                               : ((sciio_group_t *)obj)->file;
-    adapter_object_t *parent = (k == SCIIO_OBJ_GROUP)
-                                    ? ((sciio_group_t *)obj)->adapter_obj
+    fits_obj_kind_t k = *(fits_obj_kind_t *)obj;
+    fits_file_t *file = (k == FITS_OBJ_FILE) ? (fits_file_t *)obj
+                                               : ((fits_group_t *)obj)->file;
+    adapter_object_t *parent = (k == FITS_OBJ_GROUP)
+                                    ? ((fits_group_t *)obj)->adapter_obj
                                     : file->adapter->root(file->adapter_file);
     const char *name = NULL;
     if (loc_params->type == H5VL_OBJECT_BY_NAME)
@@ -1031,7 +1031,7 @@ static herr_t sciio_link_get(void *obj, const H5VL_loc_params_t *loc_params,
         case H5VL_LINK_GET_NAME:
             /* Not used for our M2 access patterns; defer to a clear error. */
         default:
-            SCIIO_UNSUPPORTED("link_get (this op_type)");
+            FITS_UNSUPPORTED("link_get (this op_type)");
     }
 }
 
@@ -1043,16 +1043,16 @@ typedef struct {
     adapter_object_t         *parent_aobj;  /* adapter parent for link_info */
     H5VL_link_iterate_args_t *args;
     const char               *prefix;       /* relative path; "" at the root */
-    sciio_file_t             *file;
+    fits_file_t             *file;
     herr_t                    user_rc;
     hsize_t                   idx;
-} sciio_iter_ctx_t;
+} fits_iter_ctx_t;
 
-static int sciio_iter_trampoline(const char *name, void *user)
+static int fits_iter_trampoline(const char *name, void *user)
 {
-    sciio_iter_ctx_t *ctx = (sciio_iter_ctx_t *)user;
+    fits_iter_ctx_t *ctx = (fits_iter_ctx_t *)user;
     H5L_info2_t info;
-    sciio_fill_linfo(&info);
+    fits_fill_linfo(&info);
     adapter_link_info_t li;
     if (ctx->file->adapter->link_info(ctx->parent_aobj, name, &li) == 0 && li.kind == ADAPTER_LINK_SOFT) {
         info.type = H5L_TYPE_SOFT;
@@ -1076,10 +1076,10 @@ static int sciio_iter_trampoline(const char *name, void *user)
         adapter_object_t *child = ctx->file->adapter->object_open(ctx->file->adapter_file,
                                                       ctx->parent_aobj, name);
         if (child && ctx->file->adapter->object_kind(child) == ADAPTER_KIND_GROUP) {
-            sciio_iter_ctx_t inner = *ctx;
+            fits_iter_ctx_t inner = *ctx;
             inner.parent_aobj = child;
             inner.prefix      = relpath;
-            int rc = ctx->file->adapter->group_iterate(child, sciio_iter_trampoline, &inner);
+            int rc = ctx->file->adapter->group_iterate(child, fits_iter_trampoline, &inner);
             ctx->user_rc = inner.user_rc;
             ctx->idx     = inner.idx;
             if (ctx->args->idx_p) *ctx->args->idx_p = ctx->idx;
@@ -1092,32 +1092,32 @@ static int sciio_iter_trampoline(const char *name, void *user)
     return 0;
 }
 
-static herr_t sciio_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
+static herr_t fits_link_specific(void *obj, const H5VL_loc_params_t *loc_params,
                                    H5VL_link_specific_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)loc_params; (void)dxpl_id; (void)req;
-    sciio_obj_kind_t k = *(sciio_obj_kind_t *)obj;
+    fits_obj_kind_t k = *(fits_obj_kind_t *)obj;
 
     switch (args->op_type) {
         case H5VL_LINK_EXISTS: {
-            /* Resolve via sciio_resolve so multi-component paths and the
+            /* Resolve via fits_resolve so multi-component paths and the
              * "this group" context are handled identically to object access. */
-            sciio_file_t *file;
+            fits_file_t *file;
             bool resolved_owns;
-            adapter_object_t *resolved = sciio_resolve(obj, loc_params, &file, &resolved_owns);
+            adapter_object_t *resolved = fits_resolve(obj, loc_params, &file, &resolved_owns);
             *args->args.exists.exists = (resolved != NULL);
             if (resolved && resolved_owns) file->adapter->object_close(resolved);
             return 0;
         }
         case H5VL_LINK_ITER: {
-            sciio_file_t *file;
+            fits_file_t *file;
             adapter_object_t *aobj;
             const char *iter_name;
-            if (k == SCIIO_OBJ_GROUP) {
-                sciio_group_t *src = (sciio_group_t *)obj;
+            if (k == FITS_OBJ_GROUP) {
+                fits_group_t *src = (fits_group_t *)obj;
                 file = src->file; aobj = src->adapter_obj; iter_name = src->name;
             } else {
-                file = (sciio_file_t *)obj;
+                file = (fits_file_t *)obj;
                 aobj = file->adapter->root(file->adapter_file);
                 iter_name = "/";
             }
@@ -1125,12 +1125,12 @@ static herr_t sciio_link_specific(void *obj, const H5VL_loc_params_t *loc_params
             /* Allocate a disposable wrapper for the hid_t we hand to the user
              * op. HDF5 will call group_close on it via H5Idec_ref; freeing the
              * wrapper is correct because we set owns_adapter_obj=false. */
-            sciio_group_t *wrap = sciio_group_new(file, iter_name, aobj, /*owns=*/false);
+            fits_group_t *wrap = fits_group_new(file, iter_name, aobj, /*owns=*/false);
             if (!wrap) return -1;
             hid_t gid = H5VLwrap_register(wrap, H5I_GROUP);
-            if (gid < 0) { sciio_group_destroy(wrap); return -1; }
+            if (gid < 0) { fits_group_destroy(wrap); return -1; }
 
-            sciio_iter_ctx_t ctx = {
+            fits_iter_ctx_t ctx = {
                 .group_id    = gid,
                 .parent_aobj = aobj,
                 .args        = &args->args.iterate,
@@ -1139,7 +1139,7 @@ static herr_t sciio_link_specific(void *obj, const H5VL_loc_params_t *loc_params
                 .user_rc     = 0,
                 .idx         = args->args.iterate.idx_p ? *args->args.iterate.idx_p : 0,
             };
-            int rc = file->adapter->group_iterate(aobj, sciio_iter_trampoline, &ctx);
+            int rc = file->adapter->group_iterate(aobj, fits_iter_trampoline, &ctx);
 
             /* Release the temporary id; user op may have done its own incref. */
             H5Idec_ref(gid);
@@ -1150,30 +1150,30 @@ static herr_t sciio_link_specific(void *obj, const H5VL_loc_params_t *loc_params
             return (herr_t)rc;
         }
         default:
-            SCIIO_UNSUPPORTED("link_specific (this op_type)");
+            FITS_UNSUPPORTED("link_specific (this op_type)");
     }
 }
-static herr_t sciio_link_optional(void *o, const H5VL_loc_params_t *l, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)o;(void)l;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("link_optional"); }
+static herr_t fits_link_optional(void *o, const H5VL_loc_params_t *l, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)o;(void)l;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("link_optional"); }
 
 /* object */
-static void *sciio_object_open(void *obj, const H5VL_loc_params_t *loc_params,
+static void *fits_object_open(void *obj, const H5VL_loc_params_t *loc_params,
                                 H5I_type_t *opened_type, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
     /* Resolve the target via the adapter to learn its kind, then dispatch to
      * the matching open. Avoids guessing from the path syntax. */
-    sciio_file_t *file;
+    fits_file_t *file;
     bool owns;
-    adapter_object_t *target = sciio_resolve(obj, loc_params, &file, &owns);
+    adapter_object_t *target = fits_resolve(obj, loc_params, &file, &owns);
     if (!target) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                  H5E_ERR_CLS, H5E_SYM, H5E_NOTFOUND,
-                 "sciio-vol: object_open target not found");
+                 "fits-hdf5-vol: object_open target not found");
         return NULL;
     }
     adapter_kind_t k = file->adapter->object_kind(target);
-    /* sciio_resolve returns a borrowed reference for root, owned otherwise.
+    /* fits_resolve returns a borrowed reference for root, owned otherwise.
      * Hand the underlying object back into the appropriate open path which
      * does its own resolution; close our temp ref afterward. */
     if (owns) file->adapter->object_close(target);
@@ -1183,46 +1183,46 @@ static void *sciio_object_open(void *obj, const H5VL_loc_params_t *loc_params,
         name = loc_params->loc_data.loc_by_name.name;
 
     if (k == ADAPTER_KIND_DATASET) {
-        void *d = sciio_dataset_open(obj, loc_params, name, H5P_DEFAULT, dxpl_id, req);
+        void *d = fits_dataset_open(obj, loc_params, name, H5P_DEFAULT, dxpl_id, req);
         if (d) *opened_type = H5I_DATASET;
         return d;
     }
-    void *g = sciio_group_open(obj, loc_params, name, H5P_DEFAULT, dxpl_id, req);
+    void *g = fits_group_open(obj, loc_params, name, H5P_DEFAULT, dxpl_id, req);
     if (g) *opened_type = H5I_GROUP;
     return g;
 }
-static herr_t sciio_object_copy(void *so, const H5VL_loc_params_t *sl, const char *sn, void *_do, const H5VL_loc_params_t *dl, const char *dn, hid_t oc, hid_t la, hid_t d, void **r)
-{ (void)so;(void)sl;(void)sn;(void)_do;(void)dl;(void)dn;(void)oc;(void)la;(void)d;(void)r; SCIIO_UNSUPPORTED("object_copy"); }
+static herr_t fits_object_copy(void *so, const H5VL_loc_params_t *sl, const char *sn, void *_do, const H5VL_loc_params_t *dl, const char *dn, hid_t oc, hid_t la, hid_t d, void **r)
+{ (void)so;(void)sl;(void)sn;(void)_do;(void)dl;(void)dn;(void)oc;(void)la;(void)d;(void)r; FITS_UNSUPPORTED("object_copy"); }
 /* Resolve the (obj, loc_params) pair to an adapter_object. Returned object is
  * borrowed if it's the root, otherwise heap-allocated and `*owns` is set so
  * the caller knows to close. Returns NULL on resolution failure. */
-static adapter_object_t *sciio_resolve(void *obj, const H5VL_loc_params_t *loc_params,
-                                       sciio_file_t **out_file, bool *owns)
+static adapter_object_t *fits_resolve(void *obj, const H5VL_loc_params_t *loc_params,
+                                       fits_file_t **out_file, bool *owns)
 {
-    sciio_obj_kind_t k = *(sciio_obj_kind_t *)obj;
-    sciio_file_t *file = (k == SCIIO_OBJ_FILE) ? (sciio_file_t *)obj : ((sciio_group_t *)obj)->file;
+    fits_obj_kind_t k = *(fits_obj_kind_t *)obj;
+    fits_file_t *file = (k == FITS_OBJ_FILE) ? (fits_file_t *)obj : ((fits_group_t *)obj)->file;
     *out_file = file;
     *owns = false;
 
     if (loc_params->type == H5VL_OBJECT_BY_SELF) {
-        if (k == SCIIO_OBJ_GROUP)   return ((sciio_group_t   *)obj)->adapter_obj;
-        if (k == SCIIO_OBJ_DATASET) return ((sciio_dataset_t *)obj)->adapter_obj;
+        if (k == FITS_OBJ_GROUP)   return ((fits_group_t   *)obj)->adapter_obj;
+        if (k == FITS_OBJ_DATASET) return ((fits_dataset_t *)obj)->adapter_obj;
         return file->adapter->root(file->adapter_file);
     }
     if (loc_params->type == H5VL_OBJECT_BY_NAME) {
         const char *name = loc_params->loc_data.loc_by_name.name;
         if (!name) return NULL;
         if (strcmp(name, ".") == 0)
-            return (k == SCIIO_OBJ_GROUP) ? ((sciio_group_t *)obj)->adapter_obj
+            return (k == FITS_OBJ_GROUP) ? ((fits_group_t *)obj)->adapter_obj
                                           : file->adapter->root(file->adapter_file);
         if (strcmp(name, "/") == 0)
             return file->adapter->root(file->adapter_file);
 
         /* Walk a multi-component path one slash at a time. */
         const char *p = (name[0] == '/') ? name + 1 : name;
-        adapter_object_t *anchor = (name[0] == '/' || k == SCIIO_OBJ_FILE)
+        adapter_object_t *anchor = (name[0] == '/' || k == FITS_OBJ_FILE)
                                        ? file->adapter->root(file->adapter_file)
-                                       : ((sciio_group_t *)obj)->adapter_obj;
+                                       : ((fits_group_t *)obj)->adapter_obj;
         adapter_object_t *cur = anchor;
         bool cur_owns = false;
         while (*p) {
@@ -1247,16 +1247,16 @@ static adapter_object_t *sciio_resolve(void *obj, const H5VL_loc_params_t *loc_p
     return NULL;
 }
 
-static herr_t sciio_object_get(void *obj, const H5VL_loc_params_t *loc_params,
+static herr_t fits_object_get(void *obj, const H5VL_loc_params_t *loc_params,
                                 H5VL_object_get_args_t *args, hid_t dxpl_id, void **req)
 {
     (void)dxpl_id; (void)req;
-    sciio_file_t *file;
+    fits_file_t *file;
     bool owns;
-    adapter_object_t *target = sciio_resolve(obj, loc_params, &file, &owns);
+    adapter_object_t *target = fits_resolve(obj, loc_params, &file, &owns);
     if (!target) {
         H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
-                 H5E_ERR_CLS, H5E_SYM, H5E_NOTFOUND, "sciio-vol: object_get target not found");
+                 H5E_ERR_CLS, H5E_SYM, H5E_NOTFOUND, "fits-hdf5-vol: object_get target not found");
         return -1;
     }
 
@@ -1293,19 +1293,19 @@ static herr_t sciio_object_get(void *obj, const H5VL_loc_params_t *loc_params,
             rc = -1;
             H5Epush2(H5E_DEFAULT, __FILE__, __func__, __LINE__,
                      H5E_ERR_CLS, H5E_VOL, H5E_UNSUPPORTED,
-                     "sciio-vol: object_get op_type %d not implemented", (int)args->op_type);
+                     "fits-hdf5-vol: object_get op_type %d not implemented", (int)args->op_type);
     }
     if (owns) file->adapter->object_close(target);
     return rc;
 }
-static herr_t sciio_object_specific(void *o, const H5VL_loc_params_t *l, H5VL_object_specific_args_t *a, hid_t d, void **r)
-{ (void)o;(void)l;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("object_specific"); }
-static herr_t sciio_object_optional(void *o, const H5VL_loc_params_t *l, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)o;(void)l;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("object_optional"); }
+static herr_t fits_object_specific(void *o, const H5VL_loc_params_t *l, H5VL_object_specific_args_t *a, hid_t d, void **r)
+{ (void)o;(void)l;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("object_specific"); }
+static herr_t fits_object_optional(void *o, const H5VL_loc_params_t *l, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)o;(void)l;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("object_optional"); }
 
 /* introspect — get_cap_flags must succeed; HDF5 calls this at registration */
-static herr_t sciio_introspect_get_conn_cls(void *obj, H5VL_get_conn_lvl_t lvl, const H5VL_class_t **conn_cls);
-static herr_t sciio_introspect_get_cap_flags(const void *info, uint64_t *cap_flags)
+static herr_t fits_introspect_get_conn_cls(void *obj, H5VL_get_conn_lvl_t lvl, const H5VL_class_t **conn_cls);
+static herr_t fits_introspect_get_cap_flags(const void *info, uint64_t *cap_flags)
 {
     (void)info;
     /* Read-only file open + group open. Nothing else advertised. */
@@ -1316,77 +1316,77 @@ static herr_t sciio_introspect_get_cap_flags(const void *info, uint64_t *cap_fla
                          | H5VL_CAP_FLAG_DATASET_BASIC;
     return 0;
 }
-static herr_t sciio_introspect_opt_query(void *obj, H5VL_subclass_t cls, int opt_type, uint64_t *flags)
+static herr_t fits_introspect_opt_query(void *obj, H5VL_subclass_t cls, int opt_type, uint64_t *flags)
 { (void)obj;(void)cls;(void)opt_type; if (flags) *flags = 0; return 0; }
 
 /* request — async not supported */
-static herr_t sciio_request_wait(void *r, uint64_t t, H5VL_request_status_t *s)   { (void)r;(void)t;(void)s; SCIIO_UNSUPPORTED("request_wait"); }
-static herr_t sciio_request_notify(void *r, H5VL_request_notify_t cb, void *c)    { (void)r;(void)cb;(void)c; SCIIO_UNSUPPORTED("request_notify"); }
-static herr_t sciio_request_cancel(void *r, H5VL_request_status_t *s)             { (void)r;(void)s; SCIIO_UNSUPPORTED("request_cancel"); }
-static herr_t sciio_request_specific(void *r, H5VL_request_specific_args_t *a)    { (void)r;(void)a; SCIIO_UNSUPPORTED("request_specific"); }
-static herr_t sciio_request_optional(void *r, H5VL_optional_args_t *a)            { (void)r;(void)a; SCIIO_UNSUPPORTED("request_optional"); }
-static herr_t sciio_request_free(void *r)                                         { (void)r; SCIIO_UNSUPPORTED("request_free"); }
+static herr_t fits_request_wait(void *r, uint64_t t, H5VL_request_status_t *s)   { (void)r;(void)t;(void)s; FITS_UNSUPPORTED("request_wait"); }
+static herr_t fits_request_notify(void *r, H5VL_request_notify_t cb, void *c)    { (void)r;(void)cb;(void)c; FITS_UNSUPPORTED("request_notify"); }
+static herr_t fits_request_cancel(void *r, H5VL_request_status_t *s)             { (void)r;(void)s; FITS_UNSUPPORTED("request_cancel"); }
+static herr_t fits_request_specific(void *r, H5VL_request_specific_args_t *a)    { (void)r;(void)a; FITS_UNSUPPORTED("request_specific"); }
+static herr_t fits_request_optional(void *r, H5VL_optional_args_t *a)            { (void)r;(void)a; FITS_UNSUPPORTED("request_optional"); }
+static herr_t fits_request_free(void *r)                                         { (void)r; FITS_UNSUPPORTED("request_free"); }
 
 /* blob */
-static herr_t sciio_blob_put(void *o, const void *b, size_t sz, void *id, void *c)            { (void)o;(void)b;(void)sz;(void)id;(void)c; SCIIO_UNSUPPORTED("blob_put"); }
-static herr_t sciio_blob_get(void *o, const void *id, void *b, size_t sz, void *c)            { (void)o;(void)id;(void)b;(void)sz;(void)c; SCIIO_UNSUPPORTED("blob_get"); }
-static herr_t sciio_blob_specific(void *o, void *id, H5VL_blob_specific_args_t *a)            { (void)o;(void)id;(void)a; SCIIO_UNSUPPORTED("blob_specific"); }
-static herr_t sciio_blob_optional(void *o, void *id, H5VL_optional_args_t *a)                 { (void)o;(void)id;(void)a; SCIIO_UNSUPPORTED("blob_optional"); }
+static herr_t fits_blob_put(void *o, const void *b, size_t sz, void *id, void *c)            { (void)o;(void)b;(void)sz;(void)id;(void)c; FITS_UNSUPPORTED("blob_put"); }
+static herr_t fits_blob_get(void *o, const void *id, void *b, size_t sz, void *c)            { (void)o;(void)id;(void)b;(void)sz;(void)c; FITS_UNSUPPORTED("blob_get"); }
+static herr_t fits_blob_specific(void *o, void *id, H5VL_blob_specific_args_t *a)            { (void)o;(void)id;(void)a; FITS_UNSUPPORTED("blob_specific"); }
+static herr_t fits_blob_optional(void *o, void *id, H5VL_optional_args_t *a)                 { (void)o;(void)id;(void)a; FITS_UNSUPPORTED("blob_optional"); }
 
 /* token */
-static herr_t sciio_token_cmp(void *o, const H5O_token_t *a, const H5O_token_t *b, int *cmp)  { (void)o;(void)a;(void)b; if (cmp) *cmp = 0; return 0; }
-static herr_t sciio_token_to_str(void *o, H5I_type_t t, const H5O_token_t *tok, char **s)    { (void)o;(void)t;(void)tok; if (s) *s = NULL; return 0; }
-static herr_t sciio_token_from_str(void *o, H5I_type_t t, const char *s, H5O_token_t *tok)   { (void)o;(void)t;(void)s;(void)tok; return 0; }
+static herr_t fits_token_cmp(void *o, const H5O_token_t *a, const H5O_token_t *b, int *cmp)  { (void)o;(void)a;(void)b; if (cmp) *cmp = 0; return 0; }
+static herr_t fits_token_to_str(void *o, H5I_type_t t, const H5O_token_t *tok, char **s)    { (void)o;(void)t;(void)tok; if (s) *s = NULL; return 0; }
+static herr_t fits_token_from_str(void *o, H5I_type_t t, const char *s, H5O_token_t *tok)   { (void)o;(void)t;(void)s;(void)tok; return 0; }
 
 /* catch-all optional */
-static herr_t sciio_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
-{ (void)o;(void)a;(void)d;(void)r; SCIIO_UNSUPPORTED("optional"); }
+static herr_t fits_optional(void *o, H5VL_optional_args_t *a, hid_t d, void **r)
+{ (void)o;(void)a;(void)d;(void)r; FITS_UNSUPPORTED("optional"); }
 
 /* ------------------------------------------------------------------ */
 /* The class itself                                                    */
 /* ------------------------------------------------------------------ */
 
-static const H5VL_class_t sciio_vol_g = {
+static const H5VL_class_t fits_hdf5_vol_g = {
     H5VL_VERSION,
-    (H5VL_class_value_t)SCIIO_VOL_VALUE,
-    SCIIO_VOL_NAME,
-    SCIIO_VOL_VERSION,
+    (H5VL_class_value_t)FITS_HDF5_VOL_VALUE,
+    FITS_HDF5_VOL_NAME,
+    FITS_HDF5_VOL_VERSION,
     /* cap_flags */ H5VL_CAP_FLAG_FILE_BASIC | H5VL_CAP_FLAG_GROUP_BASIC \
                          | H5VL_CAP_FLAG_LINK_BASIC | H5VL_CAP_FLAG_LINK_MORE \
                          | H5VL_CAP_FLAG_OBJECT_BASIC \
                          | H5VL_CAP_FLAG_ATTR_BASIC | H5VL_CAP_FLAG_ATTR_MORE \
                          | H5VL_CAP_FLAG_DATASET_BASIC,
-    sciio_init,
-    sciio_term,
-    /* info_cls    */ { 0, sciio_info_copy, sciio_info_cmp, sciio_info_free, sciio_info_to_str, sciio_str_to_info },
-    /* wrap_cls    */ { sciio_get_object, sciio_get_wrap_ctx, sciio_wrap_object, sciio_unwrap_object, sciio_free_wrap_ctx },
-    /* attr_cls    */ { sciio_attr_create, sciio_attr_open, sciio_attr_read, sciio_attr_write,
-                        sciio_attr_get, sciio_attr_specific, sciio_attr_optional, sciio_attr_close },
-    /* dataset_cls */ { sciio_dataset_create, sciio_dataset_open, sciio_dataset_read, sciio_dataset_write,
-                        sciio_dataset_get, sciio_dataset_specific, sciio_dataset_optional, sciio_dataset_close },
-    /* datatype_cls*/ { sciio_datatype_commit, sciio_datatype_open, sciio_datatype_get,
-                        sciio_datatype_specific, sciio_datatype_optional, sciio_datatype_close },
-    /* file_cls    */ { sciio_file_create, sciio_file_open, sciio_file_get,
-                        sciio_file_specific, sciio_file_optional, sciio_file_close },
-    /* group_cls   */ { sciio_group_create, sciio_group_open, sciio_group_get,
-                        sciio_group_specific, sciio_group_optional, sciio_group_close },
-    /* link_cls    */ { sciio_link_create, sciio_link_copy, sciio_link_move,
-                        sciio_link_get, sciio_link_specific, sciio_link_optional },
-    /* object_cls  */ { sciio_object_open, sciio_object_copy, sciio_object_get,
-                        sciio_object_specific, sciio_object_optional },
-    /* introspect  */ { sciio_introspect_get_conn_cls, sciio_introspect_get_cap_flags, sciio_introspect_opt_query },
-    /* request_cls */ { sciio_request_wait, sciio_request_notify, sciio_request_cancel,
-                        sciio_request_specific, sciio_request_optional, sciio_request_free },
-    /* blob_cls    */ { sciio_blob_put, sciio_blob_get, sciio_blob_specific, sciio_blob_optional },
-    /* token_cls   */ { sciio_token_cmp, sciio_token_to_str, sciio_token_from_str },
-    /* optional    */ sciio_optional
+    fits_init,
+    fits_term,
+    /* info_cls    */ { 0, fits_info_copy, fits_info_cmp, fits_info_free, fits_info_to_str, fits_str_to_info },
+    /* wrap_cls    */ { fits_get_object, fits_get_wrap_ctx, fits_wrap_object, fits_unwrap_object, fits_free_wrap_ctx },
+    /* attr_cls    */ { fits_attr_create, fits_attr_open, fits_attr_read, fits_attr_write,
+                        fits_attr_get, fits_attr_specific, fits_attr_optional, fits_attr_close },
+    /* dataset_cls */ { fits_dataset_create, fits_dataset_open, fits_dataset_read, fits_dataset_write,
+                        fits_dataset_get, fits_dataset_specific, fits_dataset_optional, fits_dataset_close },
+    /* datatype_cls*/ { fits_datatype_commit, fits_datatype_open, fits_datatype_get,
+                        fits_datatype_specific, fits_datatype_optional, fits_datatype_close },
+    /* file_cls    */ { fits_file_create, fits_file_open, fits_file_get,
+                        fits_file_specific, fits_file_optional, fits_file_close },
+    /* group_cls   */ { fits_group_create, fits_group_open, fits_group_get,
+                        fits_group_specific, fits_group_optional, fits_group_close },
+    /* link_cls    */ { fits_link_create, fits_link_copy, fits_link_move,
+                        fits_link_get, fits_link_specific, fits_link_optional },
+    /* object_cls  */ { fits_object_open, fits_object_copy, fits_object_get,
+                        fits_object_specific, fits_object_optional },
+    /* introspect  */ { fits_introspect_get_conn_cls, fits_introspect_get_cap_flags, fits_introspect_opt_query },
+    /* request_cls */ { fits_request_wait, fits_request_notify, fits_request_cancel,
+                        fits_request_specific, fits_request_optional, fits_request_free },
+    /* blob_cls    */ { fits_blob_put, fits_blob_get, fits_blob_specific, fits_blob_optional },
+    /* token_cls   */ { fits_token_cmp, fits_token_to_str, fits_token_from_str },
+    /* optional    */ fits_optional
 };
 
-static herr_t sciio_introspect_get_conn_cls(void *obj, H5VL_get_conn_lvl_t lvl, const H5VL_class_t **conn_cls)
+static herr_t fits_introspect_get_conn_cls(void *obj, H5VL_get_conn_lvl_t lvl, const H5VL_class_t **conn_cls)
 {
     (void)obj; (void)lvl;
     if (!conn_cls) return -1;
-    *conn_cls = &sciio_vol_g;
+    *conn_cls = &fits_hdf5_vol_g;
     return 0;
 }
 
@@ -1395,4 +1395,4 @@ static herr_t sciio_introspect_get_conn_cls(void *obj, H5VL_get_conn_lvl_t lvl, 
 /* ------------------------------------------------------------------ */
 
 H5PL_type_t H5PLget_plugin_type(void) { return H5PL_TYPE_VOL; }
-const void *H5PLget_plugin_info(void) { return &sciio_vol_g; }
+const void *H5PLget_plugin_info(void) { return &fits_hdf5_vol_g; }

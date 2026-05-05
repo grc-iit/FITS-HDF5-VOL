@@ -10,8 +10,8 @@
 
 #include <fitsio.h>
 
-#include "sciio/adapter.h"
-#include "sciio/registry.h"
+#include "fits_hdf5/adapter.h"
+#include "fits_hdf5/registry.h"
 
 static void build_fixture(const char *path)
 {
@@ -41,7 +41,7 @@ static void build_fixture(const char *path)
 
 int main(void)
 {
-    char path[] = "/tmp/sciio_m23_XXXXXX.fits";
+    char path[] = "/tmp/fits_m23_XXXXXX.fits";
     int fd = mkstemps(path, 5);
     assert(fd >= 0);
     close(fd);
@@ -49,7 +49,7 @@ int main(void)
     build_fixture(path);
 
     /* Drive the adapter through its vtable, the same way the connector does. */
-    const sciio_adapter_t *a = &sciio_fits_adapter;
+    const fits_adapter_t *a = &fits_adapter;
 
     adapter_probe_result_t pr = {0};
     assert(a->probe(path, &pr) == 0);

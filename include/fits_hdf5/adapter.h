@@ -1,14 +1,14 @@
 /*
- * sciio-vol Format-Adapter API.
+ * fits-hdf5-vol Format-Adapter API.
  *
  * The connector calls every adapter through a vtable: each adapter exports a
- * single `const sciio_adapter_t` instance. The connector iterates a registry
+ * single `const fits_adapter_t` instance. The connector iterates a registry
  * of these on H5Fopen, runs probe(), picks the highest-confidence match, and
  * dispatches every subsequent call through that adapter's function pointers.
  *
  * v1 ships exactly one adapter (FITS). The vtable is stable surface so DICOM
  * / GRIB / NetCDF-3 adapters can be added in v2 without changing the
- * connector or any HDF5 application that uses sciio-vol.
+ * connector or any HDF5 application that uses fits-hdf5-vol.
  *
  * Conventions:
  *   - All handles are opaque to the connector (struct fwd-decls).
@@ -25,8 +25,8 @@
  *     adapter->free_string. For rank-1 string arrays, free each element.
  */
 
-#ifndef SCIIO_ADAPTER_H
-#define SCIIO_ADAPTER_H
+#ifndef FITS_ADAPTER_H
+#define FITS_ADAPTER_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -36,10 +36,10 @@ extern "C" {
 #endif
 
 /* Bumped on every breaking change to this header. Additive changes (new
- * function-pointer slots appended to sciio_adapter_t) increment the minor;
+ * function-pointer slots appended to fits_adapter_t) increment the minor;
  * struct-layout-breaking changes increment the major. */
-#define SCIIO_ADAPTER_API_VERSION_MAJOR 1
-#define SCIIO_ADAPTER_API_VERSION_MINOR 0
+#define FITS_ADAPTER_API_VERSION_MAJOR 1
+#define FITS_ADAPTER_API_VERSION_MINOR 0
 
 /* ------------------------------------------------------------------ */
 /* Type system                                                         */
@@ -131,12 +131,12 @@ typedef int (*adapter_link_cb)(const char *name, void *user);
 /* The vtable                                                          */
 /* ------------------------------------------------------------------ */
 
-typedef struct sciio_adapter_s {
+typedef struct fits_adapter_s {
     /* Identity. `name` is short and lowercase, used in error messages and
      * in registry lookups. */
     const char *name;
 
-    /* api_version_major must equal SCIIO_ADAPTER_API_VERSION_MAJOR at the
+    /* api_version_major must equal FITS_ADAPTER_API_VERSION_MAJOR at the
      * call site, otherwise the connector refuses to register the adapter. */
     unsigned    api_version_major;
     unsigned    api_version_minor;
@@ -217,9 +217,9 @@ typedef struct sciio_adapter_s {
                         const uint64_t *block,     /* may be NULL */
                         void           *dst);
 
-} sciio_adapter_t;
+} fits_adapter_t;
 
 #ifdef __cplusplus
 }
 #endif
-#endif /* SCIIO_ADAPTER_H */
+#endif /* FITS_ADAPTER_H */
