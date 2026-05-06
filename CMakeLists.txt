@@ -532,6 +532,36 @@ if(EXISTS ${FITS_FTT4B_DIR})
     endforeach()
 endif()
 
+# Astronomy data corpus: real open-access FITS files in tests/astronomy_data/.
+# One ctest case per file, labelled "astro". Skipped cleanly if the directory
+# is absent (fresh clone before download_test_data.py has run).
+set(FITS_ASTRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests/astronomy_data" CACHE PATH
+    "Directory containing real astronomy FITS files for broad regression testing")
+
+if(EXISTS "${FITS_ASTRO_DIR}")
+    file(GLOB _astro_images "${FITS_ASTRO_DIR}/images/*.fits")
+    file(GLOB _astro_tables "${FITS_ASTRO_DIR}/tables/*.fits")
+    set(_astro_files ${_astro_images} ${_astro_tables})
+    list(SORT _astro_files)
+    list(LENGTH _astro_files _astro_count)
+    message(STATUS "Astronomy corpus: ${_astro_count} file(s) under ${FITS_ASTRO_DIR}")
+
+    foreach(_fpath ${_astro_files})
+        get_filename_component(_stem ${_fpath} NAME_WE)
+        get_filename_component(_dir  ${_fpath} DIRECTORY)
+        get_filename_component(_kind ${_dir}   NAME)   # "images" or "tables"
+        add_test(NAME astro_${_kind}_${_stem}
+            COMMAND test_corpus_smoke ${_fpath}
+        )
+        set_tests_properties(astro_${_kind}_${_stem} PROPERTIES
+            ENVIRONMENT "HDF5_PLUGIN_PATH=${CMAKE_BINARY_DIR}"
+            LABELS "astro"
+        )
+    endforeach()
+else()
+    message(STATUS "Astronomy corpus not found at ${FITS_ASTRO_DIR} — astro_* tests skipped")
+endif()
+
 # Golden h5ls -r tests, one per fixture.
 set(FITS_H5LS ${HDF5_DIR}/../bin/h5ls)
 foreach(fname primary_only image_2d multi_hdu edge_keywords table_multidim table_vlen)

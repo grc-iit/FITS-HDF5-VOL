@@ -275,9 +275,13 @@ static adapter_file_t *fits_open(const char *path, unsigned flags)
                     char val[FLEN_VALUE]; int s3 = 0;
 
                     char ttype_kw[16]; snprintf(ttype_kw, sizeof(ttype_kw), "TTYPE%d", c);
-                    if (fits_read_key(fp, TSTRING, ttype_kw, val, NULL, &s3) == 0)
+                    if (fits_read_key(fp, TSTRING, ttype_kw, val, NULL, &s3) == 0) {
                         col->name = strdup(val);
-                    else {
+                        /* '/' is the HDF5 path separator; sanitize it so column
+                         * link names like "[Fe/H]" don't corrupt path resolution. */
+                        for (char *p = col->name; *p; ++p)
+                            if (*p == '/') *p = '_';
+                    } else {
                         char tmp[16]; snprintf(tmp, sizeof(tmp), "col%d", c);
                         col->name = strdup(tmp);
                     }
@@ -1199,9 +1203,10 @@ static int fits_dataset_read(adapter_object_t *ds,
             if (!flat || !ptrs) { free(flat); free(ptrs); return -1; }
             for (long i = 0; i < nrows; ++i) ptrs[i] = flat + i * (w + 1);
 
-            char nul[1] = {' '};
+            /* Pass NULL nulval — no null-value substitution needed; avoids
+             * passing an unterminated char to CFITSIO's internal strcmp. */
             if (fits_read_col(f->fp, TSTRING, ds->col_index + 1,
-                              firstrow, 1, nrows, nul, ptrs, NULL, &status) != 0) {
+                              firstrow, 1, nrows, NULL, ptrs, NULL, &status) != 0) {
                 fprintf(stderr,
                     "fits-hdf5-vol: HDU %d col '%s': fits_read_col(TSTRING) status=%d\n",
                     ds->hdu_index, col->name, status);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the meeting-demo figure set into demo/.
+"""Generate the executive-demo figure set into demo/.
 
 Premise: every figure is produced by reading FITS through the HDF5 API
 (h5py opens .fits files transparently via fits-hdf5-vol — NO conversion to .h5
@@ -21,29 +21,58 @@ import numpy as np                     # noqa: E402
 import matplotlib                      # noqa: E402
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt        # noqa: E402
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch  # noqa: E402
+from matplotlib.patches import FancyBboxPatch  # noqa: E402
 
 REPO    = Path(__file__).resolve().parent.parent
 DEMO    = REPO / "demo"
 DEMO.mkdir(exist_ok=True)
 FTT4B   = Path.home() / "fits-tests" / "ftt4b"
+ASTRO   = REPO / "tests" / "astronomy_data"
+IMG_DIR = ASTRO / "images"
+TBL_DIR = ASTRO / "tables"
 BUILD   = REPO / "build"
 HDF5LIB = Path.home() / "opt" / "hdf5-2.1" / "lib"
 
-# CLI overrides — set in main() from --image and --table flags. Defaults
-# below are the figure-specific fallbacks each fig_* function uses if no
-# override is given.
-ARG_IMAGE = None    # used by fig02
-ARG_TABLE = None    # used by fig03 + fig06
+ARG_TABLE = None
 
 plt.rcParams.update({
     "figure.facecolor": "white",
     "axes.titlesize": 12,
     "axes.titleweight": "bold",
-    "savefig.dpi": 140,
+    "savefig.dpi": 150,
     "savefig.bbox": "tight",
     "font.family": "DejaVu Sans",
 })
+
+
+def _attr(grp, key, default=None):
+    """Safe attribute read — avoids 'in' operator (blocked on non-native VOL)."""
+    try:
+        v = grp.attrs[key]
+        if isinstance(v, (bytes, np.bytes_)): v = v.decode().strip()
+        if hasattr(v, "item"): v = v.item()
+        return v
+    except KeyError:
+        return default
+
+
+_SURVEY_SUFFIXES = {
+    "DSS_optical":     "DSS Optical",
+    "2MASS_J_band":    "2MASS J-Band",
+    "ROSAT_RASS_hard": "ROSAT X-Ray",
+}
+
+def _pretty_label(stem):
+    """Parse a filename stem into (target, survey) human-readable strings.
+
+    'Orion_Nebula_DSS_optical' → ('Orion Nebula', 'DSS Optical')
+    'Gaia_DR3'                 → ('Gaia DR3', '')
+    """
+    for suffix, survey_pretty in _SURVEY_SUFFIXES.items():
+        if stem.endswith("_" + suffix):
+            target = stem[: -(len(suffix) + 1)].replace("_", " ")
+            return target, survey_pretty
+    return stem.replace("_", " "), ""
 
 # ---------------------------------------------------------------------------
 # Figure 1 — Architecture
@@ -83,103 +112,104 @@ def fig_architecture():
 
 
 # ---------------------------------------------------------------------------
-# Figure 2 — Live read of a real astronomy image
+# Single image figure — one per FITS file
 # ---------------------------------------------------------------------------
-def fig_real_image():
-    """Open the HorseHead Nebula FITS file (real UK Schmidt photographic plate
-    from astropy's public tutorials data) through h5py + fits-hdf5-vol and render
-    the image. The file on disk is .fits, not .h5 — no conversion involved."""
-    if ARG_IMAGE is not None:
-        src = Path(ARG_IMAGE)
-    else:
-        # Try a recognizable astronomy image first; fall back to ftt4b.
-        candidates = [
-            DEMO / "HorseHead.fits",
-            DEMO / "data" / "HorseHead.fits",
-            FTT4B / "file015.fits",
-        ]
-        src = next((p for p in candidates if p.exists()), None)
-    if src is None or not src.exists():
-        print(f"  skipping fig02: image source not found ({src})")
-        return
+def fig_image(src: Path, out_path: Path):
+    """Render one FITS image to out_path. Returns True on success."""
     with h5py.File(str(src), "r") as f:
-        data  = f["HDU0/data"][...]
-        wanted = ("OBJECT", "TELESCOP", "INSTRUME", "DATE",
-                  "BITPIX", "NAXIS1", "NAXIS2")
-        attrs = {}
-        for k in wanted:
-            if k in f["HDU0"].attrs:
-                v = f["HDU0"].attrs[k]
-                if isinstance(v, bytes): v = v.decode().strip()
-                if hasattr(v, "item"):    v = v.item()
-                attrs[k] = v
+        data = f["HDU0/data"][...]
+        obj  = _attr(f["HDU0"], "OBJECT", None)
 
-    fig, ax = plt.subplots(figsize=(8.5, 7.5))
-    vmin, vmax = np.percentile(data, [2, 99.0])
-    im = ax.imshow(data, cmap="bone", vmin=vmin, vmax=vmax, origin="lower")
-    title_obj = attrs.get("OBJECT", src.name)
-    title_tel = attrs.get("TELESCOP", "")
-    ax.set_title(f"Real FITS file read live through fits-hdf5-vol\n"
-                 f"{src.name}  —  {title_tel}  ({title_obj})\n"
-                 f"shape={data.shape}   dtype={data.dtype}",
-                 pad=10)
-    ax.set_xlabel("NAXIS1 (px)"); ax.set_ylabel("NAXIS2 (px)")
-    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("pixel value (raw int16)")
+    if data.ndim < 2:
+        print(f"  skipping {src.name}: no 2-D image data"); return False
 
-    info = "    ".join(f"{k}={attrs[k]}" for k in
-                       ("BITPIX","NAXIS1","NAXIS2","DATE","INSTRUME")
-                       if k in attrs)
-    fig.text(0.5, 0.01,
-             "Code:  with h5py.File('HorseHead.fits') as f:  arr = f['HDU0/data'][...]\n"
-             f"Header attrs (read live, no conversion):  {info}",
-             ha="center", fontsize=8.5, family="monospace", color="#333")
-    fig.savefig(DEMO / "fig02_real_image_via_fits.png")
+    target, survey = _pretty_label(src.stem)
+    title    = obj.strip() if obj else target
+    subtitle = survey or ""
+
+    cmap = "inferno" if "2MASS" in src.stem or "ROSAT" in src.stem else "bone"
+    lo, hi = np.percentile(data.ravel(), [1, 99])
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    ax.imshow(data, cmap=cmap, vmin=lo, vmax=hi, origin="lower")
+    ax.axis("off")
+    if subtitle:
+        fig.suptitle(f"{title}\n{subtitle}", fontsize=14, fontweight="bold")
+    else:
+        fig.suptitle(title, fontsize=14, fontweight="bold")
+    fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
+    return True
 
 
 # ---------------------------------------------------------------------------
-# Figure 3 — Live h5py table-data read from a real ASCII Table FITS file
+# Figure 3 — Gaia DR3 catalog: 300 stars, 40 columns, live from FITS
 # ---------------------------------------------------------------------------
 def fig_live_table_read():
-    """Open a table-bearing FITS file via h5py and plot some columns directly.
-    Defaults to ftt4b/file001.fits (ESO galaxy catalog); override with --table."""
-    src = Path(ARG_TABLE) if ARG_TABLE else FTT4B / "file001.fits"
+    """Read Gaia DR3 catalog table from FITS via h5py. Plot sky positions
+    coloured by parallax and a proper-motion vector field."""
+    src = Path(ARG_TABLE) if ARG_TABLE else TBL_DIR / "Gaia_DR3.fits"
     if not src.exists():
-        print(f"  skipping fig03: table source not found ({src})")
-        return
+        src = TBL_DIR / "2MASS_PSC.fits"       # fallback
+    if not src.exists():
+        src = FTT4B / "file001.fits"            # last resort
+    if not src.exists():
+        print(f"  skipping fig03: table source not found"); return
+
     with h5py.File(str(src), "r") as f:
-        ra   = f["HDU1/columns/RA"][...]
-        dec  = f["HDU1/columns/DEC"][...]
-        rv   = f["HDU1/columns/RV"][...]
-        d25  = f["HDU1/columns/D25"][...]
-        nrows = ra.shape[0]
+        # Try Gaia columns first, fall back to ftt4b columns
+        try:
+            ra   = f["HDU1/columns/RA_ICRS"][...]
+            dec  = f["HDU1/columns/DE_ICRS"][...]
+            plx  = f["HDU1/columns/Plx"][...]
+            pmra = f["HDU1/columns/pmRA"][...]
+            pmde = f["HDU1/columns/pmDE"][...]
+            gmag = f["HDU1/columns/Gmag"][...]
+            ncols = 40
+            catalog = "Gaia DR3"
+            col_label = "Parallax (mas)"
+            col_data  = plx
+        except KeyError:
+            ra   = f["HDU1/columns/RA"][...]
+            dec  = f["HDU1/columns/DEC"][...]
+            col_data  = f["HDU1/columns/RV"][...]
+            pmra = np.zeros_like(ra)
+            pmde = np.zeros_like(dec)
+            ncols = 7
+            catalog = "ESO Galaxy Catalog"
+            col_label = "Radial velocity"
+        nrows = len(ra)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5.2))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Sky scatter (RA / DEC)
-    sc = axes[0].scatter(ra, dec, c=rv, cmap="viridis",
-                         s=80 + 10 * d25, edgecolor="black")
-    axes[0].set_xlabel("RA  (degrees)"); axes[0].set_ylabel("DEC  (degrees)")
-    axes[0].set_title("Sky positions of catalog galaxies")
-    axes[0].grid(alpha=0.3)
+    # Panel 1 — sky scatter coloured by parallax
+    sc = axes[0].scatter(ra, dec, c=col_data, cmap="plasma",
+                         s=12, alpha=0.8, edgecolors="none")
+    axes[0].set_xlabel("RA (degrees)", fontsize=11)
+    axes[0].set_ylabel("Dec (degrees)", fontsize=11)
+    axes[0].set_title(f"{catalog}  —  sky positions\n"
+                      f"{nrows} stars,  {ncols} columns per row", fontsize=11)
+    axes[0].grid(alpha=0.25)
     cbar = fig.colorbar(sc, ax=axes[0], pad=0.02)
-    cbar.set_label("Radial velocity (km/s)")
+    cbar.set_label(col_label)
 
-    # Distribution of D25 (apparent diameter)
-    axes[1].hist(d25, bins=8, color="#5B9BD5", edgecolor="black")
-    axes[1].set_xlabel("D25  (galaxy diameter)")
-    axes[1].set_ylabel("count")
-    axes[1].set_title("D25 distribution")
-    axes[1].grid(alpha=0.3)
+    # Panel 2 — proper motion vectors (subsample for clarity)
+    step = max(1, nrows // 80)
+    axes[1].quiver(ra[::step], dec[::step],
+                   pmra[::step], pmde[::step],
+                   np.hypot(pmra[::step], pmde[::step]),
+                   cmap="viridis", scale=300, width=0.004, alpha=0.85)
+    axes[1].set_xlabel("RA (degrees)", fontsize=11)
+    axes[1].set_ylabel("Dec (degrees)", fontsize=11)
+    axes[1].set_title("Proper motion vectors  (pmRA, pmDE)\n"
+                      "each arrow = stellar movement across the sky", fontsize=11)
+    axes[1].grid(alpha=0.25)
 
-    fig.suptitle(f"Live h5py read of ASCII Table from {src.name} via fits-hdf5-vol\n"
-                 f"{nrows} rows × 7 columns — file is FITS on disk; HDF5 API does the talking",
-                 fontsize=11, fontweight="bold")
-    fig.text(0.5, 0.005,
-             "Code:  with h5py.File('file001.fits') as f:  ra = f['HDU1/columns/RA'][...]",
-             ha="center", fontsize=9, family="monospace", color="#333")
-    fig.savefig(DEMO / "fig03_live_table_read.png")
+    fig.suptitle(
+        f"{catalog}  —  {nrows} Stars, {ncols} Columns\n"
+        f"Sky Positions and Proper Motions",
+        fontsize=12, fontweight="bold")
+    fig.savefig(DEMO / "fig03_gaia_catalog_read.png", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -276,101 +306,101 @@ def fig_coverage():
 
 
 # ---------------------------------------------------------------------------
-# Figure 6 — Header keyword → HDF5 attribute mapping (live from a real file)
+# Figure 6 — Header keyword → HDF5 attribute mapping (Gaia DR3)
 # ---------------------------------------------------------------------------
 def fig_keyword_mapping():
-    src = Path(ARG_TABLE) if ARG_TABLE else FTT4B / "file001.fits"
+    """Show FITS header cards becoming typed HDF5 attributes — using Gaia DR3."""
+    src = Path(ARG_TABLE) if ARG_TABLE else TBL_DIR / "Gaia_DR3.fits"
     if not src.exists():
-        print(f"  skipping fig06: source not found ({src})")
-        return
+        src = FTT4B / "file001.fits"
+    if not src.exists():
+        print(f"  skipping fig06: source not found"); return
+
+    keys_to_show = ["SIMPLE", "BITPIX", "NAXIS", "ORIGIN", "DATE",
+                    "TELESCOP", "INSTRUME", "OBSERVER", "EQUINOX", "EPOCH"]
+    rows = []
     with h5py.File(str(src), "r") as f:
-        keys_to_show = ["SIMPLE", "BITPIX", "NAXIS", "ORIGIN", "OBJECT", "DATE"]
-        rows = []
         hdu0 = f["HDU0"]
         for k in keys_to_show:
-            if k not in hdu0.attrs:
-                continue
-            v = hdu0.attrs[k]
-            if isinstance(v, bytes):
-                v = v.decode()
-            t = type(v).__name__
-            rows.append((k, str(v), t))
-        cards = hdu0.attrs["__raw_header__"][:len(rows)]
-        cards = [c.decode() if isinstance(c, bytes) else c for c in cards]
+            v = _attr(hdu0, k)
+            if v is None: continue
+            rows.append((k, repr(v), type(v).__name__))
+            if len(rows) == 8: break
+        try:
+            raw = hdu0.attrs["__raw_header__"]
+            raw_cards = [c.decode() if isinstance(c, (bytes, np.bytes_)) else c
+                         for c in raw[:len(rows)]]
+        except KeyError:
+            raw_cards = ["(raw card unavailable)"] * len(rows)
 
-    fig, ax = plt.subplots(figsize=(13, 4.2))
+    if not rows:
+        print("  skipping fig06: no attributes readable"); return
+
+    fig, ax = plt.subplots(figsize=(14, 0.7 * len(rows) + 2.2))
     ax.axis("off")
-    ax.set_title("FITS header card  →  HDF5 attribute  "
-                 "(ftt4b/file001.fits, ESO 1984 galaxy catalog)",
-                 pad=10)
+    ax.set_title(
+        f"FITS Header Keywords → HDF5 Typed Attributes\n"
+        f"Source: {_pretty_label(src.stem)[0] or src.stem}",
+        pad=12, fontsize=11)
 
-    table = []
-    for (name, value, ty), card in zip(rows, cards):
-        table.append([card.rstrip()[:70],
-                      f"{name}  =  {value!r}",
-                      ty])
-    tbl = ax.table(cellText=table,
-                   colLabels=["FITS card (raw 80-byte ASCII)",
-                              "HDF5 attribute (typed)",
-                              "Python type"],
-                   loc="center", cellLoc="left", colLoc="center")
-    tbl.auto_set_font_size(False); tbl.set_fontsize(9.5)
-    tbl.scale(1, 1.6)
+    table_data = []
+    for (name, value, ty), card in zip(rows, raw_cards):
+        table_data.append([card.rstrip()[:68], f"{name} = {value}", ty])
+
+    tbl = ax.table(
+        cellText=table_data,
+        colLabels=["FITS card (raw 80-char ASCII)",
+                   "HDF5 attribute (typed)",
+                   "Python type"],
+        loc="center", cellLoc="left", colLoc="center")
+    tbl.auto_set_font_size(False); tbl.set_fontsize(10)
+    tbl.scale(1, 1.7)
     for (i, j), cell in tbl.get_celld().items():
         if i == 0:
-            cell.set_facecolor("#404040"); cell.set_text_props(color="white",
-                                                                weight="bold")
+            cell.set_facecolor("#1F3864")
+            cell.set_text_props(color="white", weight="bold")
         elif j == 0:
-            cell.set_facecolor("#F5F5F5")
+            cell.set_facecolor("#EBF3FB")
+        elif j == 2:
+            cell.set_facecolor("#FFF2CC")
 
-    fig.text(0.5, 0.05,
-             "h5py code that produced this:\n"
-             "    with h5py.File('file001.fits','r') as f:  v = f['HDU0'].attrs['BITPIX']",
-             ha="center", fontsize=9, family="monospace", color="#333")
-    fig.savefig(DEMO / "fig06_keyword_mapping.png")
+    fig.savefig(DEMO / "fig06_keyword_mapping.png", bbox_inches="tight")
     plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
 def main():
-    global ARG_IMAGE, ARG_TABLE
     p = argparse.ArgumentParser(
-        description="Generate the fits-hdf5-vol meeting demo figure set. "
-                    "All FITS reads go through the HDF5 API — no conversion.")
-    p.add_argument("fits_files", nargs="*", metavar="FITS",
-                   help="positional FITS file(s). Used as --image. "
-                        "If two are given, the second is used as --table.")
-    p.add_argument("--image", metavar="FITS", default=None,
-                   help="image-bearing FITS file for fig02 "
-                        "(default: demo/HorseHead.fits)")
-    p.add_argument("--table", metavar="FITS", default=None,
-                   help="table-bearing FITS file for fig03/fig06 "
-                        "(default: ~/fits-tests/ftt4b/file001.fits)")
+        description="Generate one figure per FITS file, read via the HDF5 API.",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("fits_files", nargs="+", metavar="FITS",
+                   help="FITS image file(s) — one output figure per file")
     args = p.parse_args()
 
-    # Positional args fill in any flags the user didn't already pass.
-    pos = list(args.fits_files)
-    ARG_IMAGE = args.image if args.image is not None else (pos[0] if len(pos) >= 1 else None)
-    ARG_TABLE = args.table if args.table is not None else (pos[1] if len(pos) >= 2 else None)
-    if ARG_IMAGE: print(f"  --image  {ARG_IMAGE}")
-    if ARG_TABLE: print(f"  --table  {ARG_TABLE}")
+    image_files = []
+    for raw in args.fits_files:
+        src = Path(raw)
+        if not src.exists():
+            print(f"  WARNING: file not found: {raw}")
+        else:
+            image_files.append(src)
 
-    print(f"Generating figures into {DEMO}")
-    for name, fn in [
-        ("fig01_architecture",          fig_architecture),
-        ("fig02_real_image_via_fits",  fig_real_image),
-        ("fig03_live_table_read",       fig_live_table_read),
-        ("fig04_performance",           fig_performance),
-        ("fig05_test_coverage",         fig_coverage),
-        ("fig06_keyword_mapping",       fig_keyword_mapping),
-    ]:
+    if not image_files:
+        print("No valid FITS files given."); return
+
+    print(f"Generating {len(image_files)} figure(s) into {DEMO}/")
+    for idx, src in enumerate(image_files, start=1):
+        target, survey = _pretty_label(src.stem)
+        safe_stem = src.stem[:48]
+        out = DEMO / f"fig_{idx:02d}_{safe_stem}.png"
         t0 = time.time()
         try:
-            fn()
-            print(f"  ✓ {name}.png  ({time.time()-t0:.2f}s)")
+            ok = fig_image(src, out)
+            if ok:
+                label = target + (f" — {survey}" if survey else "")
+                print(f"  ✓ {out.name}  [{label}]  ({time.time()-t0:.2f}s)")
         except Exception as e:
-            print(f"  ✗ {name}: {e}")
-    print(f"\nAll figures in {DEMO}/")
+            print(f"  ✗ {src.name}: {e}")
 
 
 if __name__ == "__main__":

@@ -5,13 +5,13 @@ HDF5 applications read **FITS** files through the standard HDF5 API.
 The library / connector is named `fits-hdf5-vol`; this repository
 (`grc-iit/FITS-HDF5-VOL`) is its source home.
 
-**Status:** v1.0.0-rc — M1 through M6 complete. Read-only. 64 ctest cases
-pass against synthetic fixtures, the astropy public test corpus, and the
-local NRAO `ftt4b` corpus. The C-level subset is also clean under
-`-fsanitize=address,undefined` with leak detection enabled. The same
-`libfits_hdf5_vol.so` runs unchanged on HDF5 1.14.x and 2.1.x. A permanent
-VOL connector value from The HDF Group is pending; the current `510` is
-provisional and may change before the v1.0.0 tag.
+**Status:** v1.0.0-rc — M1 through M6 complete. Read-only. 162 ctest cases
+pass: synthetic fixtures, the astropy public test corpus, the NRAO `ftt4b`
+corpus, and 97 real open-access astronomy files (SkyView images + VizieR
+catalogs). The C-level subset is also clean under `-fsanitize=address,undefined`
+with leak detection enabled. The same `libfits_hdf5_vol.so` runs unchanged on
+HDF5 1.14.x and 2.1.x. A permanent VOL connector value from The HDF Group is
+pending; the current `510` is provisional and may change before the v1.0.0 tag.
 
 **Target HDF5:** ≥ 1.14.3 (built and validated against 2.1.x).
 **Hard dep:** CFITSIO ≥ 4.0 (system install via pkg-config).
@@ -83,11 +83,40 @@ Outputs: `build/libfits_hdf5_vol.so` plus the demo utilities (`fits_to_h5`,
 `h5_to_fits`, `fits_compare`) under `build/`. The `.c` sources for the
 utilities live in `tools/`; the binaries land in `build/` after the build.
 
-### Smoke-test the install
+### Run the test suite
 
 ```bash
 ctest --test-dir build
-# Expect: 100% tests passed, 64 / 64
+# Expect: 100% tests passed, 65 / 65
+```
+
+This covers synthetic fixtures, the 5 sha256-pinned astropy corpus files,
+and the 16 NRAO ftt4b files (if present at `~/fits-tests/ftt4b`). For the
+full 162-test run including real astronomy data, see
+[Astronomy test corpus](#astronomy-test-corpus) below.
+
+### Rebuild and rerun
+
+After editing source files, rebuild and rerun in one step:
+
+```bash
+cmake --build build -j$(nproc) && ctest --test-dir build
+
+# Show output from any failing tests:
+cmake --build build -j$(nproc) && ctest --test-dir build --output-on-failure
+
+# Run only the base suite (no astronomy data needed):
+ctest --test-dir build -LE astro
+
+# Run only the astronomy corpus:
+ctest --test-dir build -L astro
+```
+
+If you changed `CMakeLists.txt` or added files, reconfigure first:
+
+```bash
+cmake -S . -B build && cmake --build build -j$(nproc)
+ctest --test-dir build
 ```
 
 ### Optional: Building HDF5 from source
@@ -111,6 +140,51 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=$HOME/opt/hdf5-2.1
 cmake --build build -j$(nproc)
 LD_LIBRARY_PATH=$HOME/opt/hdf5-2.1/lib ctest --test-dir build
 ```
+
+## Astronomy test corpus
+
+The repository ships a download script that pulls real open-access FITS files
+from NASA SkyView and CDS VizieR. These files are **not** stored in git
+(binary blobs; ~60 MB total). Once downloaded, CMake picks them up
+automatically and adds 97 ctest cases labelled `astro`.
+
+### Step 1 — install Python dependencies
+
+```bash
+pip install requests astroquery
+```
+
+### Step 2 — download the data
+
+```bash
+python3 tools/download_test_data.py
+```
+
+This downloads in one shot:
+- 75 multi-survey images from NASA SkyView (DSS optical, 2MASS J-band, ROSAT X-ray)
+  covering 25 sky targets (Orion, Andromeda, Galactic Centre, LMC/SMC, …)
+- 14 VizieR binary table catalogs (Gaia DR3/DR2/DR1/eDR3, 2MASS PSC,
+  AllWISE, Hipparcos, Tycho-2, SDSS DR12, TESS, UCAC4, NGC 2000, …)
+- 7 astropy public test files (HorseHead, L1448 cube, M13 images, Chandra events)
+
+Files land in `tests/astronomy_data/images/` and `tests/astronomy_data/tables/`.
+Re-running is safe: existing files are skipped.
+
+### Step 3 — reconfigure and run
+
+CMake detects the directory at configure time:
+
+```bash
+cmake -S . -B build          # or re-run your existing cmake command
+ctest --test-dir build
+# Expect: 100% tests passed, 162 / 162
+
+# Run only the astronomy corpus:
+ctest --test-dir build -L astro
+```
+
+If `tests/astronomy_data/` is absent, the 97 `astro_*` tests are simply not
+registered and the base suite (65 tests) runs unchanged.
 
 ## Load the connector
 
@@ -139,37 +213,35 @@ hid_t fid = H5Fopen("obs.fits", H5F_ACC_RDONLY, fapl);
 
 `tools/` ships three small utilities. **`fits_to_h5`** uses fits-hdf5-vol on the
 input side and the native HDF5 VOL on the output side. **`h5_to_fits`** does
-the reverse direction with CFITSIO directly (fits-hdf5-vol is read-only). 
+the reverse direction with CFITSIO directly (fits-hdf5-vol is read-only).
 **`fits_compare`** does a byte-by-byte HDU-pixel comparison via CFITSIO.
 
-A complete round-trip on a small public FITS file (the astropy
-`HorseHead.fits`, 2-D BITPIX=16):
+A complete round-trip on a small public FITS file:
 
 ```bash
 # Set up the environment once.
 export HDF5_PLUGIN_PATH=$PWD/build
 
 mkdir -p roundtrip
-curl -L -o roundtrip/file007.fits \
+curl -L -o roundtrip/gc_2mass_k.fits \
     https://github.com/astropy/astropy-data/raw/main/galactic_center/gc_2mass_k.fits
-# (any real FITS file works; substitute your own path if you have one.)
 
 # 1. FITS → native HDF5 (via fits-hdf5-vol).
-./build/fits_to_h5 roundtrip/file007.fits roundtrip/file007.h5
+./build/fits_to_h5 roundtrip/gc_2mass_k.fits roundtrip/gc_2mass_k.h5
 
 # 2. HDF5 → restored FITS (via CFITSIO).
-./build/h5_to_fits roundtrip/file007.h5    roundtrip/restored_fits_from_hdf5.fits
+./build/h5_to_fits roundtrip/gc_2mass_k.h5 roundtrip/gc_2mass_k_restored.fits
 
 # 3. Verify pixels are bit-exact.
-./build/fits_compare roundtrip/file007.fits roundtrip/restored_fits_from_hdf5.fits
+./build/fits_compare roundtrip/gc_2mass_k.fits roundtrip/gc_2mass_k_restored.fits
 # → HDU0: rank 2|2  bitpix 16|16  dims [ 512 512 ] | [ 512 512 ]  ✓ pixels match (524288 bytes)
 ```
 
-The intermediate `roundtrip/file007.h5` is a **native HDF5 file**. Inspect
+The intermediate `roundtrip/gc_2mass_k.h5` is a **native HDF5 file**. Inspect
 it with stock HDF5 tools — fits-hdf5-vol is not needed:
 
 ```bash
-h5ls -r roundtrip/file007.h5
+h5ls -r roundtrip/gc_2mass_k.h5
 # /                        Group
 # /HDU0                    Group
 # /HDU0/data               Dataset {512, 512}
@@ -179,9 +251,9 @@ Read it from Python with h5py:
 
 ```python
 import h5py
-with h5py.File("roundtrip/file007.h5", "r") as f:
-    data = f["HDU0/data"][...]              # NumPy int16, shape (512, 512)
-    bitpix = int(f["HDU0"].attrs["BITPIX"]) # 16
+with h5py.File("roundtrip/gc_2mass_k.h5", "r") as f:
+    data   = f["HDU0/data"][...]              # NumPy int16, shape (512, 512)
+    bitpix = int(f["HDU0"].attrs["BITPIX"])   # 16
 ```
 
 ## Reading a FITS file directly through fits-hdf5-vol (no conversion)
@@ -190,39 +262,72 @@ You can skip the conversion entirely and treat FITS as live HDF5:
 
 ```python
 import os, h5py
-os.environ["HDF5_PLUGIN_PATH"]    = "/path/to/FITS-HDF5-VOL/build"
-os.environ["HDF5_VOL_CONNECTOR"]  = "fits"
-# If you built HDF5 from source, also set LD_LIBRARY_PATH to its lib dir.
+
+# Set env vars BEFORE importing h5py — h5py reads them at import time.
+os.environ["HDF5_PLUGIN_PATH"]   = "/path/to/FITS-HDF5-VOL/build"
+os.environ["HDF5_VOL_CONNECTOR"] = "fits"
+# If you built HDF5 from source, also set:
+# os.environ["LD_LIBRARY_PATH"] = "/path/to/hdf5-2.1/lib"
 
 with h5py.File("some.fits", "r") as f:
     pixels = f["HDU0/data"][...]
-    iden   = f["HDU1/columns/IDEN."][...]   # if HDU1 is a table
+    ra     = f["HDU1/columns/RA_ICRS"][...]   # table column
     naxis2 = int(f["HDU0"].attrs["NAXIS2"])
 ```
 
-**h5py limitation (upstream):** h5py 3.16 builds with `H5_USE_110_API`,
-which makes `f.keys()` route through the v1 link-iterate API that HDF5
-forbids on non-native VOLs. Path-based access (`f["HDU0/data"]`) works
-fine; only directory-style iteration is blocked. The same h5py needs to
-be built from source against the same HDF5 install
-(`HDF5_DIR=$HOME/opt/hdf5-2.1 pip install --no-binary=h5py h5py`),
-otherwise its bundled HDF5 instance can't see hid_ts our connector
-issues against your HDF5 instance.
+**h5py limitation (upstream):** h5py 3.x builds with `H5_USE_110_API`, which
+routes `f.keys()`, `f.visititems()`, and `"x" in f` through the v1
+link-iterate API that HDF5 rejects on non-native VOLs. Use direct path
+access (`f["HDU0/data"]`) instead. To use iteration, build h5py from source
+against the same HDF5 install:
+
+```bash
+HDF5_DIR=$HOME/opt/hdf5-2.1 pip install --no-binary=h5py --no-cache-dir h5py
+```
+
+## Demo figures
+
+`tools/make_demo_figures.py` generates presentation-quality images from real
+FITS files read live through the HDF5 API. Pass any `.fits` image files as
+positional arguments — one output figure is produced per file:
+
+```bash
+export HDF5_PLUGIN_PATH=$PWD/build
+export HDF5_VOL_CONNECTOR=fits
+
+python3 tools/make_demo_figures.py \
+    tests/astronomy_data/images/Horsehead_Neb_2MASS_J_band.fits \
+    tests/astronomy_data/images/M51_Whirlpool_DSS_optical.fits \
+    tests/astronomy_data/images/LMC_2MASS_J_band.fits
+```
+
+Figures are written to `demo/` as `fig_01_<stem>.png`, `fig_02_<stem>.png`, …
+Titles and labels are derived from the filename; no technical metadata is shown.
+
+If you built HDF5 from source, prefix with `LD_LIBRARY_PATH=$HOME/opt/hdf5-2.1/lib`.
 
 ## Repository layout
 
 ```
 FITS-HDF5-VOL/
-├── src/fits_hdf5_vol_connector.c     VOL callback layer
-├── adapters/fits/fits_adapter.c  FITS adapter (CFITSIO-backed)
-├── include/fits_hdf5/                Public headers (adapter.h, fits_hdf5_vol.h)
-├── tools/                        Demo utility sources (fits_to_h5.c, h5_to_fits.c, fits_compare.c)
+├── src/fits_hdf5_vol_connector.c   VOL callback layer
+├── adapters/fits/fits_adapter.c    FITS adapter (CFITSIO-backed)
+├── include/fits_hdf5/              Public headers (adapter.h, fits_hdf5_vol.h)
+├── tools/
+│   ├── fits_to_h5.c                FITS → native HDF5 converter (source)
+│   ├── h5_to_fits.c                HDF5 → FITS converter (source)
+│   ├── fits_compare.c              Pixel-level FITS diff (source)
+│   ├── download_test_data.py       Download SkyView images + VizieR tables + astropy files
+│   └── make_demo_figures.py        Presentation figure generator (one figure per FITS file)
 ├── tests/
-│   ├── integration/              C tests + h5py smoke + golden runner script
-│   ├── fixtures/                 build_fixtures.c (10 deterministic FITS files)
-│   └── golden/                   *.h5ls.txt golden outputs
-├── cmake/FetchCorpus.cmake       Pinned astropy public test files
-├── docs/                         Format-adapter API and release notes
+│   ├── integration/                C unit tests + h5py smoke + golden scripts
+│   ├── fixtures/                   build_fixtures.c — 10 deterministic FITS files
+│   ├── golden/                     *.h5ls.txt pinned reference outputs
+│   └── astronomy_data/             Downloaded FITS files (git-ignored; see above)
+│       ├── images/                 SkyView multi-survey image cutouts (75 files)
+│       └── tables/                 VizieR catalog tables + astropy test files (21 files)
+├── cmake/FetchCorpus.cmake         Pinned astropy public test files
+├── docs/                           Format-adapter API and release notes
 └── CMakeLists.txt
 ```
 

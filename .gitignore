@@ -1,5 +1,6 @@
 # Build output
 build/
+build_*/
 build-*/
 cmake-build-*/
 
@@ -44,6 +45,9 @@ venv/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Downloaded test corpus (binary data — run tools/download_test_data.py to populate)
+tests/astronomy_data/
 
 # Logs and temp
 *.log
